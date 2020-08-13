@@ -159,3 +159,89 @@ class SGHMC_SA(Optimizer):
         return loss
 
 
+class SGHMC(Optimizer):
+    def __init__(self, params, lr: float = 1e-2, base_c: float = 0.05, mass: float = 1, gauss_sig: float = 0.1, alpha0: float = 10, beta0: float = 10):
+        """
+        Set up the optimizer
+
+        :param params: Iterable, parameters serving as optimization variables
+        :param lr: float, learning
+        :param base_c: float, friction term
+        :param mass: float, mass term
+        :param gauss_sig: float, initial prior sigma
+        :param alpha0: float, initial hyperprior
+        :param beta0: flaot, initial hyperprior
+        """
+        self.eps = 1e-6
+        self.alpha0 = alpha0
+        self.beta0 = beta0
+
+        if gauss_sig == 0:
+            self.weight_decay = 0
+        else:
+            self.weight_decay = 1 / (gauss_sig ** 2)
+
+        if self.weight_decay <= 0.0:
+            raise ValueError("Invalid weight_decay value: {}".format(self.weight_decay))
+        if lr < 0.0:
+            raise ValueError("Invalid learning rate: {}".format(lr))
+        if base_c < 0:
+            raise ValueError("Invalid friction term: {}".format(base_c))
+        if mass <= 0.0:
+            raise ValueError("Invalid mass term: {}".format(mass))
+
+        defaults = dict(
+            lr=lr,
+            base_c=base_c,
+            mass=mass
+        )
+        super(SGHMC, self).__init__(params, defaults)
+
+    def step(self, resample_momentum=False, resample_prior=False):
+        """Simulate discretized Hamiltonian dynamics for one step"""
+        loss = None
+
+        for group in self.param_groups:  # iterate over blocks -> the ones defined in defaults. We dont use groups.
+            for p in group["params"]:  # these are weight and bias matrices
+                if p.grad is None:
+                    continue
+                state = self.state[p]  # define dict for each individual param
+                if len(state) == 0:
+                    state["iteration"] = 0
+                    state["r_momentum"] = torch.zeros_like(
+                        p)  # p.data.new(p.data.size()).normal_(mean=0, std=np.sqrt(group["lr"])) #
+                    state['weight_decay'] = self.weight_decay
+
+                state["iteration"] += 1  # this is kind of useless now but lets keep it provisionally
+
+                if resample_prior:
+                    alpha = self.alpha0 + p.data.nelement() / 2
+                    beta = self.beta0 + (p.data ** 2).sum().item() / 2
+                    gamma_sample = gamma(shape=alpha, scale=1/beta, size=None)
+                    #                     print('std', 1/np.sqrt(gamma_sample))
+                    state['weight_decay'] = gamma_sample
+
+                base_c, mass, lr = group["base_C"], group["mass"], group["lr"]
+                weight_decay = state["weight_decay"]
+
+                d_p = p.grad
+                if weight_decay != 0:
+                    d_p.add_(p.data, alpha=weight_decay)
+
+                if resample_momentum:
+                    state["v_momentum"] = torch.normal(mean=torch.zeros_like(d_p),
+                                                       std=torch.sqrt(mass))
+                r_momentum = state["r_momentum"]
+                b = 0  # "simplest choice"
+                noise_var = 2*lr(base_c - b)
+                noise_std = torch.sqrt(torch.clamp(noise_var, min=1e-16))
+                # sample random noise
+                noise_sample = torch.normal(mean=torch.zeros_like(d_p), std=noise_std)
+
+                r_momentum.add_(- lr * d_p - lr*base_c*r_momentum/mass + noise_sample)
+
+                p.add_(lr*r_momentum/mass)
+
+        return loss
+
+
