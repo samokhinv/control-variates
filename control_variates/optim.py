@@ -1,6 +1,8 @@
 import torch
 from torch.optim import Optimizer
 
+from numpy.random import gamma
+
 
 class LangevinSGD(Optimizer):
     def __init__(self, params, lr, weight_decay=0, nesterov=False):
@@ -43,10 +45,10 @@ class LangevinSGD(Optimizer):
         return loss
 
 
-class SGHMC(Optimizer):
-    """ Stochastic Gradient Hamiltonian Monte-Carlo Sampler that uses a burn-in
-        procedure to adapt its own hyperparameters during the initial stages
-        of sampling.
+class SGHMC_SA(Optimizer):
+    """ Stochastic Gradient Hamiltonian Monte-Carlo Sampler that uses scale adaption during burn-in
+        procedure to find some hyperparamters. A gaussian prior is placed over parameters and a Gamma
+        Hyperprior is placed over the prior's standard deviation
 
         See [1] for more details on this burn-in procedure.\n
         See [2] for more details on Stochastic Gradient Hamiltonian Monte-Carlo.
@@ -57,135 +59,103 @@ class SGHMC(Optimizer):
         [2] T. Chen, E. B. Fox, C. Guestrin
             In Proceedings of Machine Learning Research 32 (2014).\n
             `Stochastic Gradient Hamiltonian Monte Carlo <https://arxiv.org/pdf/1402.4102.pdf>`_
-    """
-    name = "SGHMC"
-
-    def __init__(self,
-                 params,
-                 lr: float=1e-2,
-                 num_burn_in_steps: int=3000,
-                 noise: float=0.,
-                 mdecay: float=0.05,
-                 scale_grad: float=1.) -> None:
-        """ Set up a SGHMC Optimizer.
-
-        Parameters
-        ----------
-        params : iterable
-            Parameters serving as optimization variable.
-        lr: float, optional
-            Base learning rate for this optimizer.
-            Must be tuned to the specific function being minimized.
-            Default: `1e-2`.
-        num_burn_in_steps: int, optional
-            Number of burn-in steps to perform. In each burn-in step, this
-            sampler will adapt its own internal parameters to decrease its error.
-            Set to `0` to turn scale adaption off.
-            Default: `3000`.
-        noise: float, optional
-            (Constant) per-parameter noise level.
-            Default: `0.`.
-        mdecay:float, optional
-            (Constant) momentum decay per time-step.
-            Default: `0.05`.
-        scale_grad: float, optional
-            Value that is used to scale the magnitude of the noise used
-            during sampling. In a typical batches-of-data setting this usually
-            corresponds to the number of examples in the entire dataset.
-            Default: `1.0`.
-
         """
+
+    def __init__(self, params, lr: float = 1e-2, base_c: float = 0.05, gauss_sig: float = 0.1, alpha0: float = 10, beta0: float = 10):
+        """
+        Set up the optimizer
+
+        :param params: Iterable, parameters serving as optimization variables
+        :param lr: float, learning
+        :param base_c: float, friction term
+        :param gauss_sig: float, initial prior sigma
+        :param alpha0: float, initial hyperprior
+        :param beta0: flaot, initial hyperprior
+        """
+        self.eps = 1e-6
+        self.alpha0 = alpha0
+        self.beta0 = beta0
+
+        if gauss_sig == 0:
+            self.weight_decay = 0
+        else:
+            self.weight_decay = 1 / (gauss_sig ** 2)
+
+        if self.weight_decay <= 0.0:
+            raise ValueError("Invalid weight_decay value: {}".format(self.weight_decay))
         if lr < 0.0:
             raise ValueError("Invalid learning rate: {}".format(lr))
-        if num_burn_in_steps < 0:
-            raise ValueError("Invalid num_burn_in_steps: {}".format(num_burn_in_steps))
+        if base_c < 0:
+            raise ValueError("Invalid friction term: {}".format(base_c))
 
         defaults = dict(
-            lr=lr, scale_grad=float(scale_grad),
-            num_burn_in_steps=num_burn_in_steps,
-            mdecay=mdecay,
-            noise=noise
+            lr=lr,
+            base_c=base_c,
         )
-        super().__init__(params, defaults)
+        super(SGHMC_SA, self).__init__(params, defaults)
 
-    @torch.no_grad()
-    def step(self, closure=None):
+    def step(self, burn_in=False, resample_momentum=False, resample_prior=False):
+        """Simulate discretized Hamiltonian dynamics for one step"""
         loss = None
 
-        if closure is not None:
-            loss = closure()
-
-        for group in self.param_groups:
-            for parameter in group["params"]:
-
-                if parameter.grad is None:
+        for group in self.param_groups:  # iterate over blocks -> the ones defined in defaults. We dont use groups.
+            for p in group["params"]:  # these are weight and bias matrices
+                if p.grad is None:
                     continue
-
-                state = self.state[parameter]
-
-                #  State initialization {{{ #
-
+                state = self.state[p]  # define dict for each individual param
                 if len(state) == 0:
                     state["iteration"] = 0
-                    state["tau"] = torch.ones_like(parameter)
-                    state["g"] = torch.ones_like(parameter)
-                    state["v_hat"] = torch.ones_like(parameter)
-                    state["momentum"] = torch.zeros_like(parameter)
-                #  }}} State initialization #
+                    state["tau"] = torch.ones_like(p)
+                    state["g"] = torch.ones_like(p)
+                    state["V_hat"] = torch.ones_like(p)
+                    state["v_momentum"] = torch.zeros_like(
+                        p)  # p.data.new(p.data.size()).normal_(mean=0, std=np.sqrt(group["lr"])) #
+                    state['weight_decay'] = self.weight_decay
 
-                state["iteration"] += 1
+                state["iteration"] += 1  # this is kind of useless now but lets keep it provisionally
 
-                #  Readability {{{ #
-                mdecay, noise, lr = group["mdecay"], group["noise"], group["lr"]
-                scale_grad = torch.tensor(group["scale_grad"])
+                if resample_prior:
+                    alpha = self.alpha0 + p.data.nelement() / 2
+                    beta = self.beta0 + (p.data ** 2).sum().item() / 2
+                    gamma_sample = gamma(shape=alpha, scale=1/beta, size=None)
+                    #                     print('std', 1/np.sqrt(gamma_sample))
+                    state['weight_decay'] = gamma_sample
 
-                tau, g, v_hat = state["tau"], state["g"], state["v_hat"]
-                momentum = state["momentum"]
+                base_c, lr = group["base_C"], group["lr"]
+                weight_decay = state["weight_decay"]
+                tau, g, v_hat = state["tau"], state["g"], state["V_hat"]
 
-                gradient = parameter.grad.data
-                #  }}} Readability #
+                d_p = p.grad
+                if weight_decay != 0:
+                    d_p.add_(p.data, alpha=weight_decay)
 
-                r_t = 1. / (tau + 1.)  # почему (+1)?
-                minv_t = 1. / torch.sqrt(v_hat)
+                # update parameters during burn-in
+                if burn_in:  # We update g first as it makes most sense
+                    tau.add_(-tau * (g ** 2) /
+                             (v_hat + self.eps) + 1)  # specifies the moving average window, see Eq 9 in [1] left
+                    tau_inv = 1. / (tau + self.eps)
+                    g.add_(-tau_inv * g + tau_inv * d_p)  # average gradient see Eq 9 in [1] right
+                    v_hat.add_(-tau_inv * v_hat + tau_inv * (d_p ** 2))  # gradient variance see Eq 8 in [1]
 
-                #  Burn-in updates {{{ #  это чтобы затюнить mass
-                if state["iteration"] <= group["num_burn_in_steps"]:
-                    # Update state
-                    tau.add_(1. - tau * (g * g / v_hat))
-                    g.add_(-g * r_t + r_t * gradient)
-                    v_hat.add_(-v_hat * r_t + r_t * (gradient ** 2))
-                #  }}} Burn-in updates #
+                v_sqrt = torch.sqrt(v_hat)
+                v_inv_sqrt = 1. / (v_sqrt + self.eps)  # preconditioner
 
-                lr_scaled = lr / torch.sqrt(scale_grad)
+                if resample_momentum:  # equivalent to var = M under momentum reparametrisation
+                    state["v_momentum"] = torch.normal(mean=torch.zeros_like(d_p),
+                                                       std=lr * v_inv_sqrt)
+                v_momentum = state["v_momentum"]
 
-                #  Draw random sample {{{ #
+                noise_var = (2. * (lr ** 3) * v_inv_sqrt * base_c * v_inv_sqrt - (lr ** 4))
+                noise_std = torch.sqrt(torch.clamp(noise_var, min=1e-16))
+                # sample random epsilon
+                noise_sample = torch.normal(mean=torch.zeros_like(d_p), std=noise_std)
 
-                noise_scale = (
-                    2. * (lr_scaled ** 2) * mdecay * minv_t -
-                    2. * (lr_scaled ** 3) * (minv_t ** 2) * noise -
-                    (lr_scaled ** 4)
-                )
+                # update momentum (Eq 10 right in [1])
+                v_momentum.add_(- (lr ** 2) * v_inv_sqrt * d_p - base_c * v_momentum + noise_sample)
 
-                sigma = torch.sqrt(torch.clamp(noise_scale, min=1e-16))
-
-                # sample_t = torch.normal(mean=0., std=torch.tensor(1.)) * sigma
-                sample_t = torch.normal(mean=0., std=sigma)
-                #  }}} Draw random sample #
-
-                #  SGHMC Update {{{ #
-                momentum_t = momentum.add_(
-                    - (lr ** 2) * minv_t * gradient - mdecay * momentum + sample_t
-                )
-
-                parameter.data.add_(momentum_t)
-                #  }}} SGHMC Update #
+                # update theta (Eq 10 left in [1])
+                p.add_(v_momentum)
 
         return loss
-
-
-
-
-
-
 
 
