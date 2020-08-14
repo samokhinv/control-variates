@@ -23,13 +23,14 @@ class BNNTrainer(object):
         self.report_every = kwargs.get('report_every', 100)
         self.save_freq = kwargs.get('save_freq', 2)
         self.batch_size = kwargs.get('batch_size', 500)
+        #self.resample_prior_until = kwargs.get('resample_prior_intil', 100)
         #self.burn_in_steps = kwargs.get('burn_in_steps', 200)
         
         self.device = torch.device(device)
-        self.N_train = len(trainloader.dataset)# len(trainloader) * self.batch_size
+        self.N_train = len(trainloader) * self.batch_size
         self.weight_set_samples = []
         
-    def train(self, n_epoch, burn_in_epochs=0):
+    def train(self, n_epoch, burn_in_epochs=0, resample_prior_until=1e8):
         self.model.to(self.device)
         it_cnt = 0
         for epoch in range(n_epoch):
@@ -39,13 +40,10 @@ class BNNTrainer(object):
             self.model.train()
             burn_in = epoch < burn_in_epochs
             for x, y in self.trainloader:
-                resample_prior = it_cnt % self.resample_prior_every == 0
+                resample_prior = it_cnt % self.resample_prior_every == 0 and epoch < resample_prior_until
                 resample_momentum = it_cnt % self.resample_momentum_every == 0
-                loss, err = self.do_train_step(x.to(self.device),
-                                               y.to(self.device),
-                                               resample_prior=resample_prior,
-                                               resample_momentum=resample_momentum,
-                                               burn_in=burn_in)
+                loss, err = self.do_train_step(x.to(self.device), y.to(self.device), 
+                    resample_prior=resample_prior, resample_momentum=resample_momentum, burn_in=burn_in)
                 #if resample_prior:
                 #    self.weight_set_samples = []
                 train_loss += loss
@@ -81,10 +79,9 @@ class BNNTrainer(object):
         nll *= self.N_train / x.shape[0]
         self.optimizer.zero_grad() 
         nll.backward()
-        self.optimizer.step(**kwargs)
+        self.optimizer.step()#**kwargs)
 
-        with torch.no_grad():
-            err = self.err_func(y_hat, y).sum().item()
+        err = self.err_func(y_hat, y).sum().item()
 
         return nll, err
 
