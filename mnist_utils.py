@@ -20,7 +20,6 @@ def load_mnist_dataset(data_dir, batch_size, ):
     trainset = datasets.MNIST(root=data_dir, train=True, download=True, transform=transform_train)
     valset = datasets.MNIST(root=data_dir, train=False, download=True, transform=transform_test)
 
-    
     if torch.cuda.is_available():
         trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=3)
         valloader = torch.utils.data.DataLoader(valset, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=3)

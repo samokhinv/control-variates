@@ -4,48 +4,60 @@ from torch.optim import Optimizer
 from numpy.random import gamma
 
 
-class LangevinSGD(Optimizer):
+class BaseOptimizer(Optimizer):
+    def __init__(self, params, defaults):
+        super().__init__(params, defaults)
+        self.alpha0 = 1
+        self.beta0 = 1
+
+    def step(self, burn_in=None, resample_momentum=None, resample_prior=None):
+        raise NotImplementedError
+
+    def resample_prior(self, p):
+        alpha = self.alpha0 + p.data.nelement() / 2
+        beta = self.beta0 + (p.data ** 2).sum().item() / 2
+        return gamma(shape=alpha, scale=1 / beta)  # gamma sample
+
+
+class LangevinSGD(BaseOptimizer):
     def __init__(self, params, lr, weight_decay=0, nesterov=False):
         if lr < 0.0:
             raise ValueError("Invalid learning rate: {}".format(lr))
-        if weight_decay < 0.0:
+        if weight_decay <= 0.0:
             raise ValueError("Invalid weight_decay value: {}".format(weight_decay))
+        self.weight_decay = weight_decay
 
-        defaults = dict(lr=lr, weight_decay=weight_decay)
+        defaults = dict(lr=lr)
 
         super(LangevinSGD, self).__init__(params, defaults)
 
-    def __setstate__(self, state):
-        super(LangevinSGD, self).__setstate__(state)
-        for group in self.param_groups:
-            group.setdefault('nesterov', False)
-
     @torch.no_grad()
-    def step(self, closure=None):
+    def step(self, burn_in=None, resample_momentum=None, resample_prior=False):  # the same call as for
 
         loss = None
-        if closure is not None:
-            with torch.enable_grad():
-                loss = closure()
 
         for group in self.param_groups:
-
-            weight_decay = group['weight_decay']
-
             for p in group['params']:
                 if p.grad is None:
                     continue
+                state = self.state[p]
+                if len(state) == 0:
+                    state['weight_decay'] = self.weight_decay
+                if resample_prior:
+                    state['weight_decay'] = self.resample_prior(p)
+
                 d_p = p.grad
+                weight_decay = state['weight_decay']
 
                 if weight_decay != 0:
-                    d_p.add_(p.data, alpha=weight_decay)
+                    d_p.add_(p, alpha=weight_decay)
 
                 unit_noise = p.new_empty(p.size()).normal_()
                 p.add_(0.5 * d_p + unit_noise / group['lr'] ** 0.5, alpha=-group['lr'])
         return loss
 
 
-class SGHMC_SA(Optimizer):
+class SGHMC_SA(BaseOptimizer):
     """ Stochastic Gradient Hamiltonian Monte-Carlo Sampler that uses scale adaption during burn-in
         procedure to find some hyperparamters. A gaussian prior is placed over parameters and a Gamma
         Hyperprior is placed over the prior's standard deviation
@@ -115,11 +127,7 @@ class SGHMC_SA(Optimizer):
                 state["iteration"] += 1  # this is kind of useless now but lets keep it provisionally
 
                 if resample_prior:
-                    alpha = self.alpha0 + p.data.nelement() / 2
-                    beta = self.beta0 + (p.data ** 2).sum().item() / 2
-                    gamma_sample = gamma(shape=alpha, scale=1/beta, size=None)
-                    #                     print('std', 1/np.sqrt(gamma_sample))
-                    state['weight_decay'] = gamma_sample
+                    state['weight_decay'] = self.resample_prior(p)
 
                 base_c, lr = group["base_C"], group["lr"]
                 weight_decay = state["weight_decay"]
@@ -159,7 +167,7 @@ class SGHMC_SA(Optimizer):
         return loss
 
 
-class SGHMC(Optimizer):
+class SGHMC(BaseOptimizer):
     def __init__(self, params, lr: float = 1e-2, base_c: float = 0.05, mass: float = 1, gauss_sig: float = 0.1, alpha0: float = 10, beta0: float = 10):
         """
         Set up the optimizer
@@ -197,7 +205,7 @@ class SGHMC(Optimizer):
         )
         super(SGHMC, self).__init__(params, defaults)
 
-    def step(self, resample_momentum=False, resample_prior=False):
+    def step(self, burn_in=None, resample_momentum=False, resample_prior=False):
         """Simulate discretized Hamiltonian dynamics for one step"""
         loss = None
 
@@ -208,18 +216,13 @@ class SGHMC(Optimizer):
                 state = self.state[p]  # define dict for each individual param
                 if len(state) == 0:
                     state["iteration"] = 0
-                    state["r_momentum"] = torch.zeros_like(
-                        p)  # p.data.new(p.data.size()).normal_(mean=0, std=np.sqrt(group["lr"])) #
+                    state["r_momentum"] = torch.zeros_like(p)
                     state['weight_decay'] = self.weight_decay
 
                 state["iteration"] += 1  # this is kind of useless now but lets keep it provisionally
 
                 if resample_prior:
-                    alpha = self.alpha0 + p.data.nelement() / 2
-                    beta = self.beta0 + (p.data ** 2).sum().item() / 2
-                    gamma_sample = gamma(shape=alpha, scale=1/beta, size=None)
-                    #                     print('std', 1/np.sqrt(gamma_sample))
-                    state['weight_decay'] = gamma_sample
+                    state['weight_decay'] = self.resample_prior(p)
 
                 base_c, mass, lr = group["base_C"], group["mass"], group["lr"]
                 weight_decay = state["weight_decay"]
@@ -229,7 +232,7 @@ class SGHMC(Optimizer):
                     d_p.add_(p.data, alpha=weight_decay)
 
                 if resample_momentum:
-                    state["v_momentum"] = torch.normal(mean=torch.zeros_like(d_p),
+                    state["r_momentum"] = torch.normal(mean=torch.zeros_like(d_p),
                                                        std=torch.sqrt(mass))
                 r_momentum = state["r_momentum"]
                 b = 0  # "simplest choice"
@@ -243,5 +246,3 @@ class SGHMC(Optimizer):
                 p.add_(lr*r_momentum/mass)
 
         return loss
-
-

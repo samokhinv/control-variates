@@ -26,7 +26,7 @@ class BNNTrainer(object):
         #self.burn_in_steps = kwargs.get('burn_in_steps', 200)
         
         self.device = torch.device(device)
-        self.N_train = len(trainloader) * self.batch_size
+        self.N_train = len(trainloader.dataset)# len(trainloader) * self.batch_size
         self.weight_set_samples = []
         
     def train(self, n_epoch, burn_in_epochs=0):
@@ -41,8 +41,11 @@ class BNNTrainer(object):
             for x, y in self.trainloader:
                 resample_prior = it_cnt % self.resample_prior_every == 0
                 resample_momentum = it_cnt % self.resample_momentum_every == 0
-                loss, err = self.do_train_step(x.to(self.device), y.to(self.device), 
-                    resample_prior=resample_prior, resample_momentum=resample_momentum, burn_in=burn_in)
+                loss, err = self.do_train_step(x.to(self.device),
+                                               y.to(self.device),
+                                               resample_prior=resample_prior,
+                                               resample_momentum=resample_momentum,
+                                               burn_in=burn_in)
                 #if resample_prior:
                 #    self.weight_set_samples = []
                 train_loss += loss
@@ -78,9 +81,10 @@ class BNNTrainer(object):
         nll *= self.N_train / x.shape[0]
         self.optimizer.zero_grad() 
         nll.backward()
-        self.optimizer.step()#**kwargs)
+        self.optimizer.step(**kwargs)
 
-        err = self.err_func(y_hat, y).sum().item()
+        with torch.no_grad():
+            err = self.err_func(y_hat, y).sum().item()
 
         return nll, err
 
