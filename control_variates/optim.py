@@ -120,6 +120,7 @@ class ScaleAdaSGHMC(BaseOptimizer):
         self.alpha0 = alpha0
         self.beta0 = beta0
 
+    @torch.no_grad()
     def step(self, burn_in=False, resample_momentum=False, resample_prior=False):
         """Simulate discretized Hamiltonian dynamics for one step"""
         loss = None
@@ -143,7 +144,7 @@ class ScaleAdaSGHMC(BaseOptimizer):
                 if resample_prior:
                     state['weight_decay'] = self.resample_prior(p)
 
-                base_c, lr = group["base_C"], group["lr"]
+                base_c, lr = group["base_c"], group["lr"]
                 weight_decay = state["weight_decay"]
                 tau, g, v_hat = state["tau"], state["g"], state["V_hat"]
 
@@ -238,7 +239,7 @@ class SGHMC(BaseOptimizer):
                 if resample_prior:
                     state['weight_decay'] = self.resample_prior(p)
 
-                base_c, mass, lr = group["base_C"], group["mass"], group["lr"]
+                base_c, mass, lr = group["base_c"], group["mass"], group["lr"]
                 weight_decay = state["weight_decay"]
 
                 d_p = p.grad
