@@ -1,10 +1,5 @@
 import torch
 from torch import nn
-from torch.nn.parameter import Parameter
-#from troch.nn import functional as F
-import torch.distributions as dist
-#from .optimizers import *
-import copy
 
 
 class MLP(nn.Module):
@@ -25,5 +20,14 @@ class MLP(nn.Module):
         self.block = nn.Sequential(*layers)
 
     def forward(self, x):
-        x = x.view(x.size(0), -1)
+        x = torch.flatten(x, 1)
         return self.block(x)
+
+
+class LogRegression(nn.Module):
+    def __init__(self, input_size):
+        super(LogRegression, self).__init__()
+        self.linear = nn.Linear(input_size, 2)
+
+    def forward(self, x):
+        return self.linear(x.flatten(1))  # logits to use in cross entropy
