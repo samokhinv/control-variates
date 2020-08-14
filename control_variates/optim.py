@@ -20,7 +20,12 @@ class BaseOptimizer(Optimizer):
 
 
 class LangevinSGD(BaseOptimizer):
-    def __init__(self, params, lr, weight_decay=0, nesterov=False):
+    def __init__(self,
+                 params,
+                 lr: float = 1e-3,
+                 weight_decay: float = 0,
+                 alpha0: float = 1,
+                 beta0: float = 1):
         if lr < 0.0:
             raise ValueError("Invalid learning rate: {}".format(lr))
         if weight_decay <= 0.0:
@@ -31,8 +36,11 @@ class LangevinSGD(BaseOptimizer):
 
         super(LangevinSGD, self).__init__(params, defaults)
 
+        self.alpha0 = alpha0
+        self.beta0 = beta0
+
     @torch.no_grad()
-    def step(self, burn_in=None, resample_momentum=None, resample_prior=False):  # the same call as for
+    def step(self, burn_in=None, resample_momentum=None, resample_prior=False):  # the same call as for HMC
 
         loss = None
 
@@ -57,7 +65,7 @@ class LangevinSGD(BaseOptimizer):
         return loss
 
 
-class SGHMC_SA(BaseOptimizer):
+class ScaleAdaSGHMC(BaseOptimizer):
     """ Stochastic Gradient Hamiltonian Monte-Carlo Sampler that uses scale adaption during burn-in
         procedure to find some hyperparamters. A gaussian prior is placed over parameters and a Gamma
         Hyperprior is placed over the prior's standard deviation
@@ -73,7 +81,13 @@ class SGHMC_SA(BaseOptimizer):
             `Stochastic Gradient Hamiltonian Monte Carlo <https://arxiv.org/pdf/1402.4102.pdf>`_
         """
 
-    def __init__(self, params, lr: float = 1e-2, base_c: float = 0.05, gauss_sig: float = 0.1, alpha0: float = 10, beta0: float = 10):
+    def __init__(self,
+                 params,
+                 lr: float = 1e-2,
+                 base_c: float = 0.05,
+                 gauss_sig: float = 0.1,
+                 alpha0: float = 10,
+                 beta0: float = 10):
         """
         Set up the optimizer
 
@@ -85,8 +99,6 @@ class SGHMC_SA(BaseOptimizer):
         :param beta0: flaot, initial hyperprior
         """
         self.eps = 1e-6
-        self.alpha0 = alpha0
-        self.beta0 = beta0
 
         if gauss_sig == 0:
             self.weight_decay = 0
@@ -104,7 +116,9 @@ class SGHMC_SA(BaseOptimizer):
             lr=lr,
             base_c=base_c,
         )
-        super(SGHMC_SA, self).__init__(params, defaults)
+        super(ScaleAdaSGHMC, self).__init__(params, defaults)
+        self.alpha0 = alpha0
+        self.beta0 = beta0
 
     def step(self, burn_in=False, resample_momentum=False, resample_prior=False):
         """Simulate discretized Hamiltonian dynamics for one step"""
