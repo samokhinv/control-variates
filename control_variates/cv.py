@@ -1,5 +1,33 @@
 import torch
 from torch import nn
+from torch.nn import functional as F
+from .cv_utils import compute_log_likelihood, compute_tricky_divergence, state_dict_to_vec
+
+
+class SteinCV:
+    def __init__(self, psy_model, train_x, train_y, priors, N_train):
+        self.psy_model = psy_model
+        self.train_x = train_x
+        self.train_y = train_y
+        self.priors = priors
+        self.N_train = N_train
+
+    def __call__(self, model, x):
+        model.zero_grad()
+        log_likelihood = compute_log_likelihood(self.train_x, self.train_y, model) * self.N_train
+        log_likelihood.backward()
+
+        model_weights = state_dict_to_vec(model.state_dict())
+        psy_value = self.psy_model(model_weights, x).view(1)
+
+        psy_value.backward(retain_graph=True)
+        psy_div = compute_tricky_divergence(self.psy_model)
+
+        ll_div = compute_tricky_divergence(model, self.priors)
+
+        ncv_value = psy_value*ll_div.repeat(psy_value.shape[0]) + psy_div  # зачем повторять тензор?
+
+        return ncv_value
 
 
 class PsyLinear(nn.Module):
@@ -59,8 +87,8 @@ class PsyDoubleMLP(nn.Module):
         self.final = nn.Linear(width, 1, bias=False)
 
         for n, p in self.named_parameters():
-           if p.ndim >= 2:
-               torch.nn.init.xavier_uniform(p)
+            if p.ndim >= 2:
+                torch.nn.init.xavier_uniform_(p)
 
     def forward(self, weights, x):
         x = x.view(x.shape[0], -1)

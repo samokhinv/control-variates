@@ -23,7 +23,7 @@ class LangevinSGD(BaseOptimizer):
     def __init__(self,
                  params,
                  lr: float = 1e-3,
-                 weight_decay: float = 0,
+                 weight_decay: float = 0.5,
                  alpha0: float = 1,
                  beta0: float = 1):
         if lr < 0.0:

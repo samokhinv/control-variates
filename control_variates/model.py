@@ -1,5 +1,15 @@
 import torch
 from torch import nn
+from torch.nn import functional as F
+
+
+def get_prediction(model, x):
+    return F.softmax(model(x), dim=-1)
+
+
+def get_binary_prediction(model, x, classes):
+    assert len(classes) == 2
+    return F.softmax(model(x)[..., classes], dim=-1)[..., -1]  # не сумируются в единицу?
 
 
 class MLP(nn.Module):
