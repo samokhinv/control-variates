@@ -1,3 +1,5 @@
+from functools import partial
+
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -12,24 +14,23 @@ class SteinCV:
         self.priors = priors
         self.N_train = N_train
 
-    def __call__(self, model, x):
-        model.zero_grad()
-        log_likelihood = compute_log_likelihood(self.train_x, self.train_y, model) * self.N_train
-        log_likelihood.backward()
+    def __call__(self, models, x_batch):
+        if isinstance(models, nn.Module):
+            models = (models, )
+        for model in models:
+            model.zero_grad()
+        log_likelihoods = [(compute_log_likelihood(self.train_x, self.train_y, model) * self.N_train).backward() for model in models]
+        ll_div = torch.stack([compute_tricky_divergence(model, self.priors) for model in models])  # ll_div для каждой модели
 
-        model_weights = state_dict_to_vec(model.state_dict())
-        model_weights.requires_grad = True
-        psy_value = self.psy_model(model_weights, x)
-
-        #psy_div = compute_tricky_divergence(self.psy_model)
-        psy_div = []
-        for i in range(x.shape[0]):
-            psy_div.append(torch.autograd.grad(psy_value[:, i], model_weights, retain_graph=True)[0].sum())
-        psy_div = torch.stack(psy_div, dim=0)
-
-        ll_div = compute_tricky_divergence(model, self.priors)
-
-        ncv_value = psy_value*ll_div.sum() + psy_div  # зачем повторять тензор? Женя: psy_value имеет дополнительную размерность - размерность x
+        models_weights = torch.stack([state_dict_to_vec(model.state_dict()) for model in models])  # батч моделей
+        models_weights.requires_grad = True
+        psy_value = self.psy_model(models_weights, x_batch)  # хотим тензор число моделей X число примеров
+        psy_func = partial(self.psy_model, x=x_batch)
+        # psy_div = compute_tricky_divergence(self.psy_model)
+        # psy_div = torch.autograd.grad(psy_value, models_weights, retain_graph=True, grad_outputs=torch.ones(psy_value.shape[0], x_batch.shape[0]))[0]  # psy_div для каждой модели
+        psy_jac = torch.autograd.functional.jacobian(psy_func, models_weights, create_graph=True)
+        psy_div = torch.einsum('ijil->ij', psy_jac)  # я чет завис с размерностями: i - n_models, j - n_images, l - n_weights
+        ncv_value = psy_value * ll_div.unsqueeze(-1) + psy_div
 
         return ncv_value
 
@@ -49,7 +50,7 @@ class PsyLinear(BasePsy):
         self.layer = nn.Linear(input_dim, 1)#, bias=False)
 
     def forward(self, weights, x):
-        return self.layer(weights).squeeze(-1).repeat(1, x.shape[0])
+        return self.layer(weights).repeat(1, x.shape[0])
 
 
 class PsyMLP(BasePsy):
@@ -68,9 +69,8 @@ class PsyMLP(BasePsy):
 
         self.block = nn.Sequential(*layers)
 
-
     def forward(self, weights, x):
-        return self.block(weights)
+        return self.block(weights).repeat(1, x.shape[0])
 
 
 class PsyDoubleMLP(BasePsy):
@@ -100,9 +100,9 @@ class PsyDoubleMLP(BasePsy):
 
     def forward(self, weights, x):
         x = x.view(x.shape[0], -1)
-        weights_hid  = self.block1(weights) # n * h
+        weights_hid = self.block1(weights) # n * h
         x_hid = self.block2(x)  # m * h
-        hid = weights_hid.repeat(x_hid.shape[0]).reshape(weights_hid.shape[0], x_hid.shape[0], -1)
+        hid = weights_hid.repeat(x_hid.shape[0], 1).reshape(weights_hid.shape[0], x_hid.shape[0], -1)
         hid = hid + x_hid
         return self.final(hid).squeeze(-1)
 
