@@ -25,7 +25,7 @@ class SteinCV:
         psy_div = sum(x.sum() for x in torch.autograd.grad(psy_value, model_weights))
         ll_div = compute_tricky_divergence(model, self.priors)
 
-        ncv_value = psy_value*ll_div.repeat(psy_value.shape[0]) + psy_div  # зачем повторять тензор?
+        ncv_value = psy_value*ll_div.repeat(psy_value.shape[0]) + psy_div  # зачем повторять тензор? Женя: psy_value имеет дополнительную размерность - размерность x
 
         return ncv_value
 
