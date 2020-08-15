@@ -18,28 +18,41 @@ class SteinCV:
         log_likelihood.backward()
 
         model_weights = state_dict_to_vec(model.state_dict())
-        psy_value = self.psy_model(model_weights, x).view(1)
+        model_weights.requires_grad = True
+        psy_value = self.psy_model(model_weights, x)
 
-        psy_value.backward(retain_graph=True)
         #psy_div = compute_tricky_divergence(self.psy_model)
-        psy_div = sum(x.sum() for x in torch.autograd.grad(psy_value, model_weights))
+        psy_div = []
+        for i in range(x.shape[0]):
+            psy_div.append(torch.autograd.grad(psy_value[:, i], model_weights, retain_graph=True)[0].sum())
+        psy_div = torch.stack(psy_div, dim=0)
+
         ll_div = compute_tricky_divergence(model, self.priors)
 
-        ncv_value = psy_value*ll_div.repeat(psy_value.shape[0]) + psy_div  # зачем повторять тензор? Женя: psy_value имеет дополнительную размерность - размерность x
+        ncv_value = psy_value*ll_div.sum() + psy_div  # зачем повторять тензор? Женя: psy_value имеет дополнительную размерность - размерность x
 
         return ncv_value
 
 
-class PsyLinear(nn.Module):
+class BasePsy(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def init_zero(self):
+        for n, p in self.named_parameters():
+            nn.init.zeros_(p)
+
+
+class PsyLinear(BasePsy):
     def __init__(self, input_dim):
         super().__init__()
-        self.layer = nn.Linear(input_dim, 1)
+        self.layer = nn.Linear(input_dim, 1)#, bias=False)
 
     def forward(self, weights, x):
-        return self.layer(weights)
+        return self.layer(weights).squeeze(-1).repeat(1, x.shape[0])
 
 
-class PsyMLP(nn.Module):
+class PsyMLP(BasePsy):
     def __init__(self, input_dim, width, depth):
         super().__init__()
 
@@ -52,18 +65,15 @@ class PsyMLP(nn.Module):
             layers.append(nn.Linear(width, width))
             layers.append(nn.LeakyReLU())
         layers.append(nn.Linear(width, 1, bias=False))
-        #layers.append(nn.Tanh())
 
         self.block = nn.Sequential(*layers)
 
-        #for p in self.parameters():
-        #    torch.nn.init.zeros_(p)
 
     def forward(self, weights, x):
         return self.block(weights)
 
 
-class PsyDoubleMLP(nn.Module):
+class PsyDoubleMLP(BasePsy):
     def __init__(self, input_dim1, width, depth1, input_dim2, depth2):
         super().__init__()
 
@@ -72,7 +82,6 @@ class PsyDoubleMLP(nn.Module):
         for i in range(depth1 - 1):
             layers1.append(nn.Linear(width, width))
             layers1.append(nn.ReLU())
-        #layers.append(nn.Tanh())
 
         self.block1 = nn.Sequential(*layers1)
 
@@ -80,7 +89,6 @@ class PsyDoubleMLP(nn.Module):
         for i in range(depth2 - 1):
             layers2.append(nn.Linear(width, width))
             layers2.append(nn.ReLU())
-        #layers.append(nn.Tanh())
 
         self.block2 = nn.Sequential(*layers2)
 
@@ -92,10 +100,14 @@ class PsyDoubleMLP(nn.Module):
 
     def forward(self, weights, x):
         x = x.view(x.shape[0], -1)
-        return self.final(self.block1(weights) + self.block2(x))#.view(weights.shape[0])
+        weights_hid  = self.block1(weights) # n * h
+        x_hid = self.block2(x)  # m * h
+        hid = weights_hid.repeat(x_hid.shape[0]).reshape(weights_hid.shape[0], x_hid.shape[0], -1)
+        hid = hid + x_hid
+        return self.final(hid).squeeze(-1)
 
 
-class PsyConv(nn.Module):
+class PsyConv(BasePsy):
     """
     The NCV that repeats example from [1]
 
