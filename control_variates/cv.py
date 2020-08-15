@@ -128,5 +128,6 @@ class PsyConv(BasePsy):
 
         self.alpha = nn.Linear(in_features=hidden_size, out_features=1)
 
-    def forward(self, flat_weights, image):
-        return self.alpha(self.weights_block(flat_weights) + self.image_block(image))
+    def forward(self, weights, x):
+        return self.alpha(self.weights_block(weights).unsqueeze(1).repeat(1, x.shape[0], 1) +
+                          self.image_block(x).unsqueeze(0).repeat(weights.shape[0], 1, 1))
