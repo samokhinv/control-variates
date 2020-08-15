@@ -7,7 +7,6 @@ def state_dict_to_vec(state_dict):
     return torch.cat([w_i.view(-1) for w_i in state_dict.values()])
 
 
-@torch.no_grad()
 def compute_tricky_divergence(model, priors=None):
     div = 0
     for n, p in model.named_parameters():

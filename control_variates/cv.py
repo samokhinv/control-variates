@@ -21,8 +21,8 @@ class SteinCV:
         psy_value = self.psy_model(model_weights, x).view(1)
 
         psy_value.backward(retain_graph=True)
-        psy_div = compute_tricky_divergence(self.psy_model)
-
+        #psy_div = compute_tricky_divergence(self.psy_model)
+        psy_div = sum(x.sum() for x in torch.autograd.grad(psy_value, model_weights))
         ll_div = compute_tricky_divergence(model, self.priors)
 
         ncv_value = psy_value*ll_div.repeat(psy_value.shape[0]) + psy_div  # зачем повторять тензор?

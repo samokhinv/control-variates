@@ -41,3 +41,27 @@ class LogRegression(nn.Module):
 
     def forward(self, x):
         return self.linear(x.flatten(1))  # logits to use in cross entropy
+
+
+class SiBNN(nn.Module):
+    """
+    The Bayesian Neural Net used in [1] for experiments
+
+    [1] Neural Control Variates for Monte Carlo Variance Reduction <https://arxiv.org/pdf/1806.00159.pdf>
+    """
+    def __init__(self, in_channels=1, output_size=10):
+        super(SiBNN, self).__init__()
+        self.in_channels = in_channels
+        self.output_size = output_size
+
+        self.net = nn.Sequential(
+            nn.Conv2d(in_channels, 2, 5),
+            nn.MaxPool2d(2),
+            nn.Conv2d(2, 3, 3),
+            nn.MaxPool2d(2),
+            nn.Flatten(),
+            nn.Linear(147, output_size)
+        )
+
+    def forward(self, image):
+        return self.net(image)
