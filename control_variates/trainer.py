@@ -29,8 +29,15 @@ class BNNTrainer(object):
         self.device = torch.device(device)
         self.N_train = len(trainloader) * self.batch_size
         self.weight_set_samples = []
+        self.early_stopping = kwargs.get('early_stopping', False)
+        if self.early_stopping:
+            self.min_delta = kwargs.get('min_delta', 1e-3)
+            self.wait = kwargs.get('wait', 10)
+
         
     def train(self, n_epoch, burn_in_epochs=0, resample_prior_until=1e8):
+        best_loss = 1e9
+        no_significant_improvement_step = 0
         self.model.to(self.device)
         it_cnt = 0
         for epoch in range(n_epoch):
@@ -70,8 +77,16 @@ class BNNTrainer(object):
                     val_err += self.err_func(y_hat, y).sum().item()
                     val_loss += self.nll_func(y_hat, y)
                     n_ex += x.shape[0]
-
             logger.info(f'Epoch {epoch} finished. Val loss {val_loss / n_ex}, Val error {val_err / n_ex}')
+            if self.early_stopping:
+                if val_loss / n_ex - best_loss < -self.min_delta:
+                    best_loss = val_loss / n_ex
+                else:
+                    no_significant_improvement_step += 1
+
+                if no_significant_improvement_step >= self.wait:
+                    logger.info('Early Stopping triggered')
+                    break
 
     def do_train_step(self, x, y, **kwargs):
         y_hat = self.model(x)
