@@ -17,7 +17,7 @@ class ClassificationUncertaintyMCMC(object):
     def get_predictions(self, x):
         predictions = []
         for model in self.models:
-            predictions.append(F.softmax(model(x)[:, 1], dim=-1)) # p(y=1|x,\theta)
+            predictions.append(F.softmax(model(x), dim=-1)[:, -1]) # p(y=1|x,\theta)
         predictions = torch.stack(predictions, dim=0).squeeze()
         self.predictions_storage = predictions
 
