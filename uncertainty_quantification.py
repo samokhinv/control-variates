@@ -1,4 +1,4 @@
-from itertools import product
+from itertools import repeat
 
 import torch
 from torch import nn
@@ -7,6 +7,11 @@ from torch.nn import functional as F
 from control_variates.cv import SteinCV
 from control_variates.cv_utils import state_dict_to_vec
 from joblib import Parallel, wrap_non_picklable_objects, delayed
+
+
+@delayed
+def _get_prediction(model, x):
+    return F.softmax(model(x), dim=-1)[..., -1]
 
 
 class ClassificationUncertaintyMCMC(object):
@@ -19,15 +24,9 @@ class ClassificationUncertaintyMCMC(object):
         self.predictions_storage = None
         self.cv_values = torch.zeros(len(models)) # n_classes
 
-    @delayed
-    @wrap_non_picklable_objects
-    @staticmethod
-    def _get_prediction(model, x):
-        return F.softmax(model(x), dim=-1)[..., -1]
-
-    def parallel_predictions(self, x):  # не тестил
+    def parallel_predictions(self, x):
         with Parallel(n_jobs=-2, backend='threading') as p:
-            predictions = p(self._get_prediction(*args) for args in product(self.models, x))
+            predictions = p(_get_prediction(*args) for args in zip(self.models, repeat(x)))
         return torch.stack(predictions, dim=0).squeeze()
 
     def get_predictions(self, x):
@@ -44,7 +43,7 @@ class ClassificationUncertaintyMCMC(object):
     def get_cv_values(self, x):
         #weights = torch.stack([state_dict_to_vec(model.state_dict()) for model in self.models], dim=0)
         #self.cv_values = torch.stack([self.control_variate(model, x) for model in self.models], dim=0).squeeze()
-        self.cv_values = self.control_variate(self.models, x)   # вроде мы к такому вызову стремимся, и он сейчас работает
+        self.cv_values = self.control_variate(self.models, x)  #  вроде мы к такому вызову стремимся, и он сейчас работает
         return self.cv_values
 
     def estimate_emperical_mean(self, x, use_cv=True):

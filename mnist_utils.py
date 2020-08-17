@@ -27,14 +27,12 @@ def load_mnist_dataset(data_dir, batch_size, two_classes=None):
         trainset.targets, valset.targets = trainset.targets[train_idx] == two_classes[1], valset.targets[val_idx] == two_classes[1]
 
     if torch.cuda.is_available():
-        trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=3)
-        valloader = torch.utils.data.DataLoader(valset, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=3)
+        trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, pin_memory=True)
+        valloader = torch.utils.data.DataLoader(valset, batch_size=batch_size, shuffle=False, pin_memory=True)
 
     else:
-        trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, pin_memory=False,
-                                                num_workers=3)
-        valloader = torch.utils.data.DataLoader(valset, batch_size=batch_size, shuffle=False, pin_memory=False,
-                                                num_workers=3)
+        trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, pin_memory=False)
+        valloader = torch.utils.data.DataLoader(valset, batch_size=batch_size, shuffle=False, pin_memory=False)
 
     return trainloader, valloader
 
