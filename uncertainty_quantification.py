@@ -80,4 +80,4 @@ class ClassificationUncertaintyMCMC(object):
         variance_with_cv = self.estimate_emperical_variance(x, use_cv, predictions, cv_values, check)
         variance_without_cv = self.estimate_emperical_variance(x, False, predictions, cv_values, check)
 
-        return (variance_with_cv / variance_without_cv) / x.shape[0]  # Валя: зачем делить на размер батча? вроде как тензор получится
+        return variance_with_cv / variance_without_cv
