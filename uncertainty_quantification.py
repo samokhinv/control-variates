@@ -8,6 +8,8 @@ from control_variates.cv import SteinCV
 from control_variates.cv_utils import state_dict_to_vec
 from joblib import Parallel, wrap_non_picklable_objects, delayed
 
+import warnings
+
 
 @delayed
 def _get_prediction(model, x):
@@ -18,11 +20,10 @@ class ClassificationUncertaintyMCMC(object):
     '''
     SO FAR ONLY FOR ONE x
     '''
+
     def __init__(self, models, control_variate: SteinCV = None):
         self.models = models
         self.control_variate = control_variate
-        self.predictions_storage = None
-        self.cv_values = torch.zeros(len(models)) # n_classes
 
     def parallel_predictions(self, x):
         with Parallel(n_jobs=-2, backend='threading') as p:
@@ -32,41 +33,51 @@ class ClassificationUncertaintyMCMC(object):
     def get_predictions(self, x):
         predictions = []
         for model in self.models:
-            predictions.append(F.softmax(model(x), dim=-1)[..., -1]) # p(y=1|x,\theta)
-        predictions = torch.stack(predictions, dim=0).squeeze()
-        self.predictions_storage = predictions
+            predictions.append(F.softmax(model(x), dim=-1)[..., -1])  # p(y=1|x,\theta)
+        return torch.stack(predictions, dim=0).squeeze()
 
     def get_cv_values(self, x):
-        #weights = torch.stack([state_dict_to_vec(model.state_dict()) for model in self.models], dim=0)
-        #self.cv_values = torch.stack([self.control_variate(model, x) for model in self.models], dim=0).squeeze()
-        self.cv_values = self.control_variate(self.models, x)  #  вроде мы к такому вызову стремимся, и он сейчас работает
-        return self.cv_values
-
-    def estimate_emperical_mean(self, x, use_cv=True):
-        if self.predictions_storage is None:
-            self.get_predictions(x)
-        if use_cv:
-            if self.control_variate is not None:
-                self.get_cv_values(x)
-            emperical_mean = self.predictions_storage.mean(0) - self.cv_values.mean(0)
-        else:
-            emperical_mean = self.predictions_storage.mean(0)
-        return emperical_mean
-
-    def estimate_emperical_variance(self, x, use_cv=True):
-        emperical_mean = self.estimate_emperical_mean(x, use_cv)
-        if use_cv:
-            emperical_variance = ((self.predictions_storage - self.cv_values - emperical_mean) ** 2).sum(0)
-        else:
-            emperical_variance = ((self.predictions_storage - emperical_mean) ** 2).sum(0)
-        return emperical_variance / (len(self.models) - 1)
-
-    def compute_variance_ratio(self, batch_x):
+        # weights = torch.stack([state_dict_to_vec(model.state_dict()) for model in self.models], dim=0)
+        # self.cv_values = torch.stack([self.control_variate(model, x) for model in self.models], dim=0).squeeze()
         if self.control_variate is None:
-            raise Exception
-        variance_with_cv = self.estimate_emperical_variance(batch_x, True)
-        variance_without_cv = self.estimate_emperical_variance(batch_x, False)
+            raise ValueError('Control variate is undefined')
+        return self.control_variate(self.models, x)
 
-        return (variance_with_cv / variance_without_cv) / batch_x.shape[0]
+    def _calculate_if_needed(self, x, use_cv, predictions, cv_values):
+        if predictions is None:
+            if x is not None:
+                predictions = self.get_predictions(x)
+            else:
+                raise ValueError('Both predictions and x are undefined')
+        if cv_values is None:
+            if use_cv:
+                if x is not None:
+                    cv_values = self.get_cv_values(x)
+                else:
+                    raise ValueError('Both cv values and x are undefined')
+            else:
+                cv_values = torch.zeros((len(self.models), x.shape[0]))
+        return predictions, cv_values
 
+    def estimate(self, x, use_cv=True):
+        predictions, cv_values = self._calculate_if_needed(x, use_cv=True, predictions=None, cv_values=None)
+        return self.estimate_emperical_mean(predictions=predictions, cv_values=cv_values, check=False), \
+               self.estimate_emperical_variance(predictions=predictions, cv_values=cv_values, check=False)
 
+    def estimate_emperical_mean(self, x=None, use_cv=False, predictions=None, cv_values=None, check=True):
+        if check:
+            predictions, cv_values = self._calculate_if_needed(x, use_cv, predictions, cv_values)
+        return (predictions - cv_values).mean(0)
+
+    def estimate_emperical_variance(self, x=None, use_cv=False, predictions=None, cv_values=None, check=True):
+        if check:
+            predictions, cv_values = self._calculate_if_needed(x, use_cv, predictions, cv_values)
+        return (predictions - cv_values).var(0, unbiased=True)
+
+    def compute_variance_ratio(self, x=None, use_cv=True, predictions=None, cv_values=None, check=True):
+        if not use_cv:
+            warnings.warn('The ratio is 1. Did you mean use_cv=True?')
+        variance_with_cv = self.estimate_emperical_variance(x, use_cv, predictions, cv_values, check)
+        variance_without_cv = self.estimate_emperical_variance(x, False, predictions, cv_values, check)
+
+        return (variance_with_cv / variance_without_cv) / x.shape[0]  # Валя: зачем делить на размер батча? вроде как тензор получится
