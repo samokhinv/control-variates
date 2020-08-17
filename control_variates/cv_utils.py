@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 from torch import nn
 from torch.nn import functional as F
 
@@ -40,5 +41,39 @@ def compute_naive_variance(function: callable, control_variate: callable, models
 
     return v, v_no_cv
 
+
+def SpectralVariance(object):
+    def __init__(self, function, sample):
+        self.function = function
+        self.sample = sample
+        values = np.array(list(map(function, sample)))
+        self.cetr_values = values - np.mean(values)
+
+        self.autocovariances = []
+
+    def get_autocovariance(self, s):
+        rho = np.dot(self.centr_values[:s], self.centr_values[s:]) / len(self.centr_values)
+        return rho
+    
+    def get_variance(self, window_lag_f, truncation_point):
+        for s in range(truncation_point):
+            self.autocovariances.append(self.get_autocovariance(s))
+        variance = 0
+        for s in range(-truncation_point-1, truncation_point):
+            variance.append(self.autocovariances[np.abs(s)] * window_lag_f(s / truncation_point))
+
+        return variance
+
+
+    def trapezoial_kernel(s):
+        assert -1 <= s <= 1
+        if -1 <= s < -0.5:
+            return 2 * s + 2
+        elif -0.5 <= s < 0.5:
+            return 1
+        else:
+            return -2 * s + 2
+
+    
 
 
