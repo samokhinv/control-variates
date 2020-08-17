@@ -42,25 +42,40 @@ def compute_naive_variance(function: callable, control_variate: callable, models
     return v, v_no_cv
 
 
-def SpectralVariance(object):
-    def __init__(self, function, sample):
+class SpectralVariance(object):
+    def __init__(self, function, sample, window_lag_f:callable, truncation_point):
         self.function = function
         self.sample = sample
-        values = np.array(list(map(function, sample)))
-        self.cetr_values = values - np.mean(values)
+        self.window_lag_f = window_lag_f
+        self.truncation_point = truncation_point
+        self.centr_values = []
+        # if x is not None:
+        #     values = np.array([function(model, x) for model in sample])
+        #     self.cetr_values = values - np.mean(values)
 
-        self.autocovariances = []
+        self.autocovariances = None #torch.zeros()
+
+    def __call__(self, x):
+        values = torch.stack([self.function(model, x) for model in self.sample], dim=0)
+        self.centr_values = values - torch.mean(values, dim=0)
+        self.autocovariances = torch.zeros(len(self.sample), x.shape[0])
+
+        return self.get_variance()
 
     def get_autocovariance(self, s):
-        rho = np.dot(self.centr_values[:s], self.centr_values[s:]) / len(self.centr_values)
+        if s == 0:
+            left_side = self.centr_values
+        else:
+            left_side = self.centr_values[:-s]
+        rho = (left_side * self.centr_values[s:]).mean(0)
         return rho
     
-    def get_variance(self, window_lag_f, truncation_point):
-        for s in range(truncation_point):
-            self.autocovariances.append(self.get_autocovariance(s))
+    def get_variance(self):
+        for s in range(self.truncation_point):
+            self.autocovariances[s] = self.get_autocovariance(s)
         variance = 0
-        for s in range(-truncation_point-1, truncation_point):
-            variance.append(self.autocovariances[np.abs(s)] * window_lag_f(s / truncation_point))
+        for s in range(-self.truncation_point+1, self.truncation_point):
+            variance += self.autocovariances[np.abs(s)] * self.window_lag_f(s / self.truncation_point)
 
         return variance
 
