@@ -37,6 +37,10 @@ class ClassificationUncertaintyMCMC(object):
         predictions = torch.stack(predictions, dim=0).squeeze()
         self.predictions_storage = predictions
 
+    def clean(self):
+        self.predictions_storage = None
+        self.cv_values = torch.zeros(len(self.models))
+
     def get_cv_values(self, x):
         #weights = torch.stack([state_dict_to_vec(model.state_dict()) for model in self.models], dim=0)
         #self.cv_values = torch.stack([self.control_variate(model, x) for model in self.models], dim=0).squeeze()
@@ -68,6 +72,6 @@ class ClassificationUncertaintyMCMC(object):
         variance_with_cv = self.estimate_emperical_variance(batch_x, True)
         variance_without_cv = self.estimate_emperical_variance(batch_x, False)
 
-        return (variance_with_cv / variance_without_cv) / batch_x.shape[0]
+        return (variance_with_cv / variance_without_cv)
 
 

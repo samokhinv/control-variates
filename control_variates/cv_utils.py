@@ -65,14 +65,14 @@ def SpectralVariance(object):
         return variance
 
 
-    def trapezoial_kernel(s):
-        assert -1 <= s <= 1
-        if -1 <= s < -0.5:
-            return 2 * s + 2
-        elif -0.5 <= s < 0.5:
-            return 1
-        else:
-            return -2 * s + 2
+def trapezoidal_kernel(s):
+    assert -1 <= s <= 1
+    if -1 <= s < -0.5:
+        return 2 * s + 2
+    elif -0.5 <= s < 0.5:
+        return 1
+    else:
+        return -2 * s + 2
 
     
 
