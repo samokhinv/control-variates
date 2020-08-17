@@ -42,16 +42,31 @@ class ClassificationUncertaintyMCMC(object):
         self.cv_values = self.control_variate(self.models, x)  #  вроде мы к такому вызову стремимся, и он сейчас работает
         return self.cv_values
 
-    def estimate_emperical_mean(self, x):
+    def estimate_emperical_mean(self, x, use_cv=True):
         if self.predictions_storage is None:
             self.get_predictions(x)
-        if self.control_variate is not None:
-            self.get_cv_values(x)
-        emperical_mean = self.predictions_storage.mean(0) - self.cv_values.mean(0)
+        if use_cv:
+            if self.control_variate is not None:
+                self.get_cv_values(x)
+            emperical_mean = self.predictions_storage.mean(0) - self.cv_values.mean(0)
+        else:
+            emperical_mean = self.predictions_storage.mean(0)
         return emperical_mean
 
-    def estimate_emperical_variance(self, x):
-        emperical_mean = self.estimate_emperical_mean(x)
-        emperical_variance = ((self.predictions_storage - self.cv_values - emperical_mean) ** 2).sum(0)
+    def estimate_emperical_variance(self, x, use_cv=True):
+        emperical_mean = self.estimate_emperical_mean(x, use_cv)
+        if use_cv:
+            emperical_variance = ((self.predictions_storage - self.cv_values - emperical_mean) ** 2).sum(0)
+        else:
+            emperical_variance = ((self.predictions_storage - emperical_mean) ** 2).sum(0)
         return emperical_variance / (len(self.models) - 1)
+
+    def compute_variance_ratio(self, batch_x):
+        if self.control_variate is None:
+            raise Exception
+        variance_with_cv = self.estimate_emperical_variance(batch_x, True)
+        variance_without_cv = self.estimate_emperical_variance(batch_x, False)
+
+        return (variance_with_cv / variance_without_cv) / batch_x.shape[0]
+
 
