@@ -6,6 +6,19 @@ from torch.nn import functional as F
 from .cv_utils import compute_log_likelihood, compute_tricky_divergence, state_dict_to_vec
 
 
+def reshape_m_i(models_vec, image_vec):
+    """
+    Function to get vectors for product of models and images sets
+
+    :param models_vec: (n_models, *)
+    :param image_vec: (n_images, *)
+    :return: repeated inputs, both of shape (n_models, n_images, *)
+    """
+    models_vec = torch.repeat_interleave(models_vec.unsqueeze(1), repeats=image_vec.shape[0], dim=1)
+    image_vec = torch.repeat_interleave(image_vec.unsqueeze(0), repeats=models_vec.shape[0], dim=1)
+    return models_vec, image_vec
+
+
 class SteinCV:
     def __init__(self, psy_model, train_x, train_y, priors, N_train):
         self.psy_model = psy_model
@@ -129,5 +142,4 @@ class PsyConv(BasePsy):
         self.alpha = nn.Linear(in_features=hidden_size, out_features=1)
 
     def forward(self, weights, x):
-        return self.alpha(self.weights_block(weights).unsqueeze(1).repeat(1, x.shape[0], 1) +
-                          self.image_block(x).unsqueeze(0).repeat(weights.shape[0], 1, 1))
+        return self.alpha(sum(reshape_m_i(self.weights_block(weights), self.image_block(x))))

@@ -1,29 +1,46 @@
+from itertools import product
+
 import torch
 from torch import nn
 from torch.nn import functional as F
+
+from control_variates.cv import SteinCV
 from control_variates.cv_utils import state_dict_to_vec
+from joblib import Parallel, wrap_non_picklable_objects, delayed
 
 
 class ClassificationUncertaintyMCMC(object):
     '''
     SO FAR ONLY FOR ONE x
     '''
-    def __init__(self, models, control_variate=None):
+    def __init__(self, models, control_variate: SteinCV = None):
         self.models = models
         self.control_variate = control_variate
         self.predictions_storage = None
         self.cv_values = torch.zeros(len(models)) # n_classes
 
+    @delayed
+    @wrap_non_picklable_objects
+    @staticmethod
+    def _get_prediction(model, x):
+        return F.softmax(model(x), dim=-1)[..., -1]
+
+    def parallel_predictions(self, x):  # не тестил
+        with Parallel(n_jobs=-2, backend='threading') as p:
+            predictions = p(self._get_prediction(*args) for args in product(self.models, x))
+        return torch.stack(predictions, dim=0).squeeze()
+
     def get_predictions(self, x):
         predictions = []
         for model in self.models:
-            predictions.append(F.softmax(model(x), dim=-1)[:, -1]) # p(y=1|x,\theta)
+            predictions.append(F.softmax(model(x), dim=-1)[..., -1]) # p(y=1|x,\theta)
         predictions = torch.stack(predictions, dim=0).squeeze()
         self.predictions_storage = predictions
 
     def get_cv_values(self, x):
         #weights = torch.stack([state_dict_to_vec(model.state_dict()) for model in self.models], dim=0)
-        self.cv_values = torch.stack([self.control_variate(model, x) for model in self.models], dim=0).squeeze()
+        #self.cv_values = torch.stack([self.control_variate(model, x) for model in self.models], dim=0).squeeze()
+        self.cv_values = self.control_variate(self.models, x)   # вроде мы к такому вызову стремимся, и он сейчас работает
         return self.cv_values
 
     def estimate_emperical_mean(self, x):
