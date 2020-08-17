@@ -97,7 +97,7 @@ def main(args):
 
         all_weights_and_priors.append((weights_set, priors))
     
-    pickle.dump(all_weights_and_priors, Path('../saved_samples', 'mnist_weights', f'{args.n_samples}_samples.pkl').open('wb'))
+    pickle.dump(all_weights_and_priors, Path('saved_samples', 'mnist_weights', f'{args.n_samples}_samples_seed{args.seed}.pkl').open('wb'))
 
 
 if __name__ == '__main__':
