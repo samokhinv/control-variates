@@ -15,7 +15,7 @@ def reshape_m_i(models_vec, image_vec):
     :return: repeated inputs, both of shape (n_models, n_images, *)
     """
     models_vec = torch.repeat_interleave(models_vec.unsqueeze(1), repeats=image_vec.shape[0], dim=1)
-    image_vec = torch.repeat_interleave(image_vec.unsqueeze(0), repeats=models_vec.shape[0], dim=1)
+    image_vec = torch.repeat_interleave(image_vec.unsqueeze(0), repeats=models_vec.shape[0], dim=0)
     return models_vec, image_vec
 
 
@@ -39,12 +39,9 @@ class SteinCV:
         models_weights.requires_grad = True
         psy_value = self.psy_model(models_weights, x_batch)  # хотим тензор число моделей X число примеров
         psy_func = partial(self.psy_model, x=x_batch)
-        # psy_div = compute_tricky_divergence(self.psy_model)
-        # psy_div = torch.autograd.grad(psy_value, models_weights, retain_graph=True, grad_outputs=torch.ones(psy_value.shape[0], x_batch.shape[0]))[0]  # psy_div для каждой модели
         psy_jac = torch.autograd.functional.jacobian(psy_func, models_weights, create_graph=True)
         psy_div = torch.einsum('ijil->ij', psy_jac)  # я чет завис с размерностями: i - n_models, j - n_images, l - n_weights
         ncv_value = psy_value * ll_div.unsqueeze(-1) + psy_div
-
         return ncv_value
 
 
@@ -136,10 +133,11 @@ class PsyConv(BasePsy):
             nn.MaxPool2d(2),
             nn.Conv2d(in_channels=2, out_channels=3, kernel_size=3),
             nn.MaxPool2d(2),
-            nn.ReLU()
+            nn.ReLU(),
+            nn.Flatten()
         )
 
-        self.alpha = nn.Linear(in_features=hidden_size, out_features=1)
+        self.alpha = nn.Linear(in_features=hidden_size, out_features=1, bias=True)
 
     def forward(self, weights, x):
-        return self.alpha(sum(reshape_m_i(self.weights_block(weights), self.image_block(x))))
+        return self.alpha(F.sigmoid(sum(reshape_m_i(self.weights_block(weights), self.image_block(x))))).squeeze(-1)

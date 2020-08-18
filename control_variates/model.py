@@ -60,7 +60,7 @@ class SiBNN(nn.Module):
             nn.Conv2d(2, 3, 3),
             nn.MaxPool2d(2),
             nn.Flatten(),
-            nn.Linear(147, output_size)
+            nn.Linear(75, output_size)
         )
 
     def forward(self, image):
