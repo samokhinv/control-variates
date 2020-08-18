@@ -60,7 +60,7 @@ class PsyLinear(BasePsy):
         self.layer = nn.Linear(input_dim, 1)#, bias=False)
 
     def forward(self, weights, x):
-        return self.layer(weights).repeat(1, x.shape[0])
+        return reshape_m_i(self.layer(weights), x)[0].squeeze(-1)
 
 
 class PsyMLP(BasePsy):

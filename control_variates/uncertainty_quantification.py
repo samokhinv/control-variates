@@ -4,9 +4,9 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from control_variates.cv import SteinCV
-from control_variates.cv_utils import state_dict_to_vec
-from joblib import Parallel, wrap_non_picklable_objects, delayed
+from .cv import SteinCV
+from .cv_utils import state_dict_to_vec
+from joblib import Parallel, delayed
 
 import warnings
 

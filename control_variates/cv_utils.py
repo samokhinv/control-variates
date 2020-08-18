@@ -3,6 +3,8 @@ import numpy as np
 from torch import nn
 from torch.nn import functional as F
 
+from joblib import Parallel
+
 
 def state_dict_to_vec(state_dict):
     return torch.cat([w_i.view(-1) for w_i in state_dict.values()])
@@ -15,7 +17,8 @@ def compute_tricky_divergence(model, priors=None):
             continue
         d_p = p.grad
         if priors is not None:
-            d_p.add_(p.data, alpha=-priors[n])
+            if n in priors:
+                d_p.add_(p.data, alpha=-priors[n])
         div += d_p.sum()
     return div
 
