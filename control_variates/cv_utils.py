@@ -23,6 +23,19 @@ def compute_tricky_divergence(model, priors=None):
     return div
 
 
+def compute_concat_gradient(model, priors=None):
+    whole_grad = torch.Tensor()
+    for n, p in model.named_parameters():
+        if p.grad is None:
+            continue
+        d_p = p.grad
+        if priors is not None:
+            if n in priors:
+                d_p.add_(p.data, alpha=-priors[n])
+        whole_grad = torch.cat([whole_grad, d_p.flatten()])
+    return whole_grad
+
+
 def compute_log_likelihood(x, y, model):
     y_hat = model(x)
     log_likelihood = -F.cross_entropy(y_hat, y, reduction='mean')

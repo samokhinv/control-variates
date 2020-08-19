@@ -38,6 +38,7 @@ class BNNTrainer(object):
         self.N_train = len(trainloader) * self.batch_size
         self.weight_set_samples = []
         self.early_stopping = kwargs.get('early_stopping', False)
+        self.gradient_history = []
         if self.early_stopping:
             self.min_delta = kwargs.get('min_delta', 1e-3)
             self.wait = kwargs.get('wait', 10)
@@ -102,7 +103,7 @@ class BNNTrainer(object):
         nll *= self.N_train / x.shape[0]
         self.optimizer.zero_grad() 
         nll.backward()
-        self.optimizer.step(**kwargs)
+        self.gradient_history.append(self.optimizer.step(**kwargs)[1])
 
         err = self.err_func(y_hat, y).sum().item()
 
