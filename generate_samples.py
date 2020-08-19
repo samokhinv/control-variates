@@ -22,6 +22,12 @@ INPUT_DIM = 784
 mcmc_grdadients = {'sgld': SGLD, 'sghmc': H_SA_SGHMC}
 
 
+def random_seed(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    np.random.seed(seed)
+
+
 def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument('--bnn_lr', type=float, default=1e-3)
@@ -30,8 +36,8 @@ def parse_arguments():
     parser.add_argument('--hidden_dim', type=int, default=0)
     parser.add_argument('--n_epoch', type=int, default=200)
     parser.add_argument('--classes', type=int, nargs='+', default=[3,5])
-    parser.add_argument('--alpha0', type=float, default=10)
-    parser.add_argument('--beta0', type=float, default=10)
+    parser.add_argument('--alpha0', type=float, default=1)
+    parser.add_argument('--beta0', type=float, default=1)
     parser.add_argument('--resample_prior_every', type=int, default=15)
     parser.add_argument('--resample_momentum_every', type=int, default=50)
     parser.add_argument('--burn_in_epochs', type=int, default=20)
@@ -41,14 +47,17 @@ def parse_arguments():
     parser.add_argument('--device', type=str, default='cuda:0')
     parser.add_argument('--mcmc_gradient', type=str, choices=['sgld', 'sghmc'], default='sghmc')
     parser.add_argument('--n_samples', type=int, default=100)
-    parser.add_argument('--seed', type=int, default=42)
-    #parser.add_argument()
+    parser.add_argument('--seed', type=int, default=None)
     args = parser.parse_args()
 
     return args
 
 
 def main(args):
+    if args.seed is not None:
+        random_seed(args.seed)
+    else:
+        args.seed = -1
     device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
 
     Path('data', 'mnist').mkdir(exist_ok=True, parents=True)
@@ -80,7 +89,7 @@ def main(args):
             trainloader, 
             valloader, 
             device=device, 
-            resample_prior_every=args.resample_prior_every,
+            resample_prior_every=float('inf'), #args.resample_prior_every,
             resample_momentum_every=args.resample_momentum_every,
             save_freq=args.save_freq,
             batch_size=args.batch_size
@@ -91,13 +100,14 @@ def main(args):
         opt_with_priors = trainer.optimizer
         priors = {}
         group_params = opt_with_priors.param_groups[0]['params']
-        for (n, _), p in zip(weights_set, group_params):  
+        for (n, _), p in zip(weights_set[0].items(), group_params):  
             state = opt_with_priors.state[p]  
             priors[n] = state['weight_decay']
+        print(priors)
 
         all_weights_and_priors.append((weights_set, priors))
     
-    pickle.dump(all_weights_and_priors, Path('saved_samples', 'mnist_weights', f'{args.n_samples}_samples_seed{args.seed}.pkl').open('wb'))
+        pickle.dump(all_weights_and_priors, Path('saved_samples', 'mnist_weights', f'{args.n_samples}_samples_seed{args.seed}.pkl').open('wb'))
 
 
 if __name__ == '__main__':
