@@ -43,7 +43,7 @@ class LangevinSGD(BaseOptimizer):
     def step(self, burn_in=None, resample_momentum=None, resample_prior=False):  # the same call as for HMC
 
         loss = None
-
+        sum_grad = 0
         for group in self.param_groups:
             for p in group['params']:
                 if p.grad is None:
@@ -60,9 +60,10 @@ class LangevinSGD(BaseOptimizer):
                 if weight_decay != 0:
                     d_p.add_(p, alpha=weight_decay)
 
+                sum_grad += d_p.sum().item()
                 unit_noise = p.new_empty(p.size()).normal_()
                 p.add_(0.5 * d_p + unit_noise / group['lr'] ** 0.5, alpha=-group['lr'])
-        return loss
+        return loss, sum_grad
 
 
 class ScaleAdaSGHMC(BaseOptimizer):
@@ -124,7 +125,7 @@ class ScaleAdaSGHMC(BaseOptimizer):
     def step(self, burn_in=False, resample_momentum=False, resample_prior=False):
         """Simulate discretized Hamiltonian dynamics for one step"""
         loss = None
-
+        sum_grad = 0
         for group in self.param_groups:  # iterate over blocks -> the ones defined in defaults. We dont use groups.
             for p in group["params"]:  # these are weight and bias matrices
                 if p.grad is None:
@@ -151,7 +152,7 @@ class ScaleAdaSGHMC(BaseOptimizer):
                 d_p = p.grad
                 if weight_decay != 0:
                     d_p.add_(p.data, alpha=weight_decay)
-
+                sum_grad += d_p.sum().item()
                 # update parameters during burn-in
                 if burn_in:  # We update g first as it makes most sense
                     tau.add_(-tau * (g ** 2) /
@@ -179,7 +180,7 @@ class ScaleAdaSGHMC(BaseOptimizer):
                 # update theta (Eq 10 left in [1])
                 p.add_(v_momentum)
 
-        return loss
+        return loss, sum_grad
 
 
 class SGHMC(BaseOptimizer):
