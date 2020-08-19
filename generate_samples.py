@@ -7,7 +7,7 @@ from torch.nn import functional as F
 from control_variates.model import LogRegression
 
 import numpy as np
-import pickle
+import dill as pickle
 from pathlib import Path
 from functools import partial
 from easydict import EasyDict as edict
@@ -22,6 +22,12 @@ from joblib import Parallel, wrap_non_picklable_objects, delayed
 INPUT_DIM = 784
 
 mcmc_grdadients = {'sgld': SGLD, 'sghmc': H_SA_SGHMC}
+
+
+def random_seed(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    np.random.seed(seed)
 
 
 def parse_arguments():
@@ -43,14 +49,17 @@ def parse_arguments():
     parser.add_argument('--device', type=str, default='cuda:0')
     parser.add_argument('--mcmc_gradient', type=str, choices=['sgld', 'sghmc'], default='sghmc')
     parser.add_argument('--n_samples', type=int, default=100)
-    parser.add_argument('--seed', type=int, default=42)
-    #parser.add_argument()
+    parser.add_argument('--seed', type=int, default=None)
     args = parser.parse_args()
 
     return args
 
 
 args = parse_arguments()
+if args.seed is not None:
+    random_seed(args.seed)
+else:
+    args.seed = -1
 device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
 
 Path('data', 'mnist').mkdir(exist_ok=True, parents=True)
@@ -88,7 +97,7 @@ def sample_trajectory():
                          trainloader,
                          valloader,
                          device=device,
-                         resample_prior_every=args.resample_prior_every,
+                         resample_prior_every=float('inf'), #args.resample_prior_every,
                          resample_momentum_every=args.resample_momentum_every,
                          save_freq=args.save_freq,
                          batch_size=args.batch_size
@@ -100,7 +109,7 @@ def sample_trajectory():
     opt_with_priors = trainer.optimizer
     priors = {}
     group_params = opt_with_priors.param_groups[0]['params']
-    for (n, _), p in zip(weights_set, group_params):
+    for (n, _), p in zip(weights_set[0].items(), group_params):
         state = opt_with_priors.state[p]
         priors[n] = state['weight_decay']
 
@@ -108,23 +117,8 @@ def sample_trajectory():
 
 
 def main():
-    device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
-
-    Path('data', 'mnist').mkdir(exist_ok=True, parents=True)
-    trainloader, valloader = load_mnist_dataset(Path('data', 'mnist'), args.batch_size, classes=args.classes)
-   
-    def nll_func(y_hat, y):
-        nll = F.cross_entropy(y_hat, y, reduction='sum')
-        return nll
-
-    def err_func(y_hat, y):
-        err = y_hat.argmax(-1).ne(y)
-        return err
-
-    mcmc_class = mcmc_grdadients[args.mcmc_gradient]
     with Parallel(n_jobs=-2, backend='threading', verbose=1) as p:
         all_weights_and_priors = [p(sample_trajectory() for _ in range(args.n_samples))]
-    
     pickle.dump(all_weights_and_priors, Path('saved_samples', 'mnist_weights', f'{args.n_samples}_samples_seed{args.seed}.pkl').open('wb'))
 
 
