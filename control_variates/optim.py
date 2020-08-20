@@ -26,22 +26,26 @@ class LangevinSGD(BaseOptimizer):
                  weight_decay: float = 0.5,
                  alpha0: float = 1,
                  beta0: float = 1):
+
+        self.alpha0 = alpha0
+        self.beta0 = beta0
+        self.weight_decay = gamma(shape=self.alpha0, scale=1/self.beta0)
+
         if lr < 0.0:
             raise ValueError("Invalid learning rate: {}".format(lr))
         if weight_decay <= 0.0:
             raise ValueError("Invalid weight_decay value: {}".format(weight_decay))
-        self.weight_decay = weight_decay
+
 
         defaults = dict(lr=lr)
 
         super(LangevinSGD, self).__init__(params, defaults)
 
-        self.alpha0 = alpha0
-        self.beta0 = beta0
+
 
     @torch.no_grad()
     def step(self, burn_in=None, resample_momentum=None, resample_prior=False):  # the same call as for HMC
-
+        resample_prior = False
         loss = None
         sum_grad = 0
         for group in self.param_groups:
@@ -87,8 +91,8 @@ class ScaleAdaSGHMC(BaseOptimizer):
                  lr: float = 1e-2,
                  base_c: float = 0.05,
                  gauss_sig: float = 0.1,
-                 alpha0: float = 10,
-                 beta0: float = 10):
+                 alpha0: float = 1,
+                 beta0: float = 1):
         """
         Set up the optimizer
 
@@ -100,11 +104,9 @@ class ScaleAdaSGHMC(BaseOptimizer):
         :param beta0: flaot, initial hyperprior
         """
         self.eps = 1e-6
-
-        if gauss_sig == 0:
-            self.weight_decay = 0
-        else:
-            self.weight_decay = 1 / (gauss_sig ** 2)
+        self.alpha0 = alpha0
+        self.beta0 = beta0
+        self.weight_decay = gamma(shape=self.alpha0, scale=1/self.beta0)
 
         if self.weight_decay <= 0.0:
             raise ValueError("Invalid weight_decay value: {}".format(self.weight_decay))
@@ -118,12 +120,11 @@ class ScaleAdaSGHMC(BaseOptimizer):
             base_c=base_c,
         )
         super(ScaleAdaSGHMC, self).__init__(params, defaults)
-        self.alpha0 = alpha0
-        self.beta0 = beta0
 
     @torch.no_grad()
     def step(self, burn_in=False, resample_momentum=False, resample_prior=False):
         """Simulate discretized Hamiltonian dynamics for one step"""
+        resample_prior = False
         loss = None
         sum_grad = 0
         for group in self.param_groups:  # iterate over blocks -> the ones defined in defaults. We dont use groups.
