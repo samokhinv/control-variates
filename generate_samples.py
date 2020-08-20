@@ -32,7 +32,7 @@ def random_seed(seed):
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--bnn_lr', type=float, default=1e-3)
+    parser.add_argument('--bnn_lr', type=float, default=1e-5)
     parser.add_argument('--batch_size', type=int, default=500)
     parser.add_argument('--n_hidden_layers', type=int, default=0)
     parser.add_argument('--hidden_dim', type=int, default=0)
@@ -40,7 +40,7 @@ def parse_arguments():
     parser.add_argument('--classes', type=int, nargs='+', default=[3,5])
     parser.add_argument('--alpha0', type=float, default=1)
     parser.add_argument('--beta0', type=float, default=1)
-    parser.add_argument('--resample_prior_every', type=int, default=15)
+    parser.add_argument('--resample_prior_every', type=int, default=float('inf'))
     parser.add_argument('--resample_momentum_every', type=int, default=50)
     parser.add_argument('--burn_in_epochs', type=int, default=20)
     parser.add_argument('--resample_prior_until', type=int, default=100)
@@ -81,7 +81,7 @@ mcmc_class = mcmc_grdadients[args.mcmc_gradient]
 
 @delayed
 @wrap_non_picklable_objects
-def sample_trajectory():
+def sample_trajectory(i):
     if args.n_hidden_layers == 0:
         model = LogRegression(INPUT_DIM)
     else:
@@ -113,13 +113,25 @@ def sample_trajectory():
         state = opt_with_priors.state[p]
         priors[n] = state['weight_decay']
 
+    save_path = Path('saved_samples') / 'mnist_weights' / 'trajectories' / args.mcmc_gradient
+    save_path.mkdir(exist_ok=True)
+    with open(save_path/f'{i}.pkl', 'wb') as fp:
+        pickle.dump(
+            {'weights': weights_set,
+             'priors': priors
+             }, fp)
+    #torch.save(
+    #    {'weights': weights_set,
+    #     'priors': priors
+    #     }, save_path / f'{i}.pckl')
+
     return weights_set, priors
 
 
 def main():
-    with Parallel(n_jobs=-2, backend='threading', verbose=1) as p:
-        all_weights_and_priors = [p(sample_trajectory() for _ in range(args.n_samples))]
-    pickle.dump(all_weights_and_priors, Path('saved_samples', 'mnist_weights', f'{args.n_samples}_samples_seed{args.seed}.pkl').open('wb'))
+    with Parallel(n_jobs=-2, verbose=1) as p:
+        all_weights_and_priors = [p(sample_trajectory(i) for i in range(args.n_samples))]
+    pickle.dump(all_weights_and_priors, Path('saved_samples', 'mnist_weights', 'trajectories', args.mcmc_gradient, f'{args.n_samples}_samples_seed{args.seed}.pkl').open('wb'))
 
 
 if __name__ == '__main__':
