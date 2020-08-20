@@ -42,6 +42,14 @@ def compute_log_likelihood(x, y, model):
     return log_likelihood
 
 
+def compute_ll_div(models, train_x, train_y, N_train, priors=None):
+    for model in models:
+        model.zero_grad()
+    log_likelihoods = [(compute_log_likelihood(train_x, train_y, model) * N_train).backward() for model in models]
+    ll_div = torch.stack([compute_concat_gradient(model, priors) for model in models])
+    return ll_div
+
+
 def compute_mc_estimate(function: callable, models, x: torch.tensor):
     return function(models, x).sum(0) / len(models)
 
