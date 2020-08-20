@@ -7,9 +7,15 @@ def get_prediction(model, x):
     return F.softmax(model(x), dim=-1)
 
 
-def get_binary_prediction(model, x, classes):
+def get_binary_prediction(models, x, classes):
     assert len(classes) == 2
-    return F.softmax(model(x)[..., classes], dim=-1)[..., -1]  # не сумируются в единицу?
+    if isinstance(models, nn.Module):
+        models = (models,)
+    pred = []
+    for model in models: 
+        pred.append(F.softmax(model(x)[..., classes], dim=-1)[..., -1])  # не сумируются в единицу?
+    pred = torch.stack(pred, 0)
+    return pred
 
 
 class MLP(nn.Module):
@@ -60,7 +66,7 @@ class SiBNN(nn.Module):
             nn.Conv2d(2, 3, 3),
             nn.MaxPool2d(2),
             nn.Flatten(),
-            nn.Linear(147, output_size)
+            nn.Linear(75, output_size)
         )
 
     def forward(self, image):

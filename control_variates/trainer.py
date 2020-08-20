@@ -1,10 +1,18 @@
-import torch
 import copy
 import numpy as np
 import logging
+
+import torch
+from torch import cuda
+
+from .cv import SteinCV
+
 FORMAT = '%(asctime)-15s %(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 logger = logging.getLogger(__name__)
+
+from typing import List, Callable
+from .uncertainty_quantification import ClassificationUncertaintyMCMC
 
 
 class BNNTrainer(object):
@@ -18,7 +26,7 @@ class BNNTrainer(object):
 
         self.resample_prior_every = kwargs.get('resample_prior_every', 100)
         self.resample_momentum_every = kwargs.get('resample_momentum_every', 50)
-        device = kwargs.get('device', 'cuda:0')
+        device = kwargs.get('device', 'cuda:0' if cuda.is_available() else 'cpu')
         self.max_weight_set_size = kwargs.get('max_weight_set_size', 200)
         self.report_every = kwargs.get('report_every', 10)
         self.save_freq = kwargs.get('save_freq', 2)
@@ -30,6 +38,7 @@ class BNNTrainer(object):
         self.N_train = len(trainloader) * self.batch_size
         self.weight_set_samples = []
         self.early_stopping = kwargs.get('early_stopping', False)
+        self.gradient_history = []
         if self.early_stopping:
             self.min_delta = kwargs.get('min_delta', 1e-3)
             self.wait = kwargs.get('wait', 10)
@@ -94,7 +103,7 @@ class BNNTrainer(object):
         nll *= self.N_train / x.shape[0]
         self.optimizer.zero_grad() 
         nll.backward()
-        self.optimizer.step(**kwargs)
+        self.gradient_history.append(self.optimizer.step(**kwargs)[1])
 
         err = self.err_func(y_hat, y).sum().item()
 
@@ -128,3 +137,63 @@ class BNNTrainer(object):
         self.weight_set_samples.append(copy.deepcopy(self.model.state_dict()))
 
         return None
+
+
+class NCVTrainer(object):
+    def __init__(self,
+                 ncv: SteinCV,
+                 models: List[Callable],
+                 var_criterion: Callable[[torch.Tensor], torch.Tensor],
+                 valid_criterion: Callable[[torch.Tensor], torch.Tensor],
+                 x_batch,
+                 optimizer,
+                 trainloader,
+                 valloader,
+                 **kwargs):
+        self.ncv = ncv
+        self.models = models
+        self.x_batch = x_batch
+        self.optimizer = optimizer
+        self.trainloader = trainloader
+        self.valloader = valloader
+
+        self.var_criterion = var_criterion
+        self.valid_criterion = valid_criterion
+        self.report_every = kwargs.get('report_every', 10)
+        self.early_stopping = kwargs.get('early_stopping', False)
+        if self.early_stopping:
+            self.min_delta = kwargs.get('min_delta', 1e-3)
+            self.wait = kwargs.get('wait', 10)
+
+    def train(self, x, n_epochs):
+        best_loss = 1e9
+        no_significant_improvement_step = 0
+        for epoch in range(n_epochs):
+            val_loss = []
+            self.ncv.psy_model.train()
+            for x, _ in self.trainloader:
+                x.to(self.device)
+                self.optimizer.zero_grad()
+                mc_variance = self.var_criterion(x)
+                mc_variance.backward()
+                self.optimizer.step()
+
+            self.ncv.psy_model.eval()
+            for x, _ in self.valloader:
+                x.to(self.device)
+                with torch.no_grad():
+                    val_loss.append(self.valid_criterion(x).mean().item())
+
+            val_loss = np.mean(val_loss)
+
+            if epoch % self.report_every == 0:
+                logger.info(f'Epoch {epoch} finished. Val loss {val_loss}')
+            if self.early_stopping:
+                if val_loss - best_loss < -self.min_delta:
+                    best_loss = val_loss
+                else:
+                    no_significant_improvement_step += 1
+
+                if no_significant_improvement_step >= self.wait:
+                    logger.info('Early Stopping triggered')
+                    break

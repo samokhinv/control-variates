@@ -3,7 +3,7 @@ from functools import partial
 import torch
 from torch import nn
 from torch.nn import functional as F
-from .cv_utils import compute_log_likelihood, compute_tricky_divergence, state_dict_to_vec
+from .cv_utils import compute_log_likelihood, compute_tricky_divergence, state_dict_to_vec, compute_concat_gradient
 
 
 def reshape_m_i(models_vec, image_vec):
@@ -15,7 +15,7 @@ def reshape_m_i(models_vec, image_vec):
     :return: repeated inputs, both of shape (n_models, n_images, *)
     """
     models_vec = torch.repeat_interleave(models_vec.unsqueeze(1), repeats=image_vec.shape[0], dim=1)
-    image_vec = torch.repeat_interleave(image_vec.unsqueeze(0), repeats=models_vec.shape[0], dim=1)
+    image_vec = torch.repeat_interleave(image_vec.unsqueeze(0), repeats=models_vec.shape[0], dim=0)
     return models_vec, image_vec
 
 
@@ -26,25 +26,46 @@ class SteinCV:
         self.train_y = train_y
         self.priors = priors
         self.N_train = N_train
+        #self.added
+        #self.n_batch = 0
+        #self.ll_div = None
 
-    def __call__(self, models, x_batch):
+    # def update_potential(self, train_x, train_y):
+    #     log_likelihoods = [(compute_log_likelihood(self.train_x, self.train_y, model) * self.N_train).backward() for model in models]
+    #     #ll_div = torch.stack([compute_tricky_divergence(model, self.priors) for model in models])  # ll_div для каждой модели
+    #     ll_div = self.train_x.shape[0] * torch.stack([compute_concat_gradient(model, self.priors) for model in models])
+    #     if self.ll_div is None:
+    #         self.ll_div = ll_div / self.train_x.shape[0]
+    #     else:
+    #         self.ll_div = (self.ll_div * self.n_batch + ll_div) / (self.n_batch + self.train_x.shape[0])
+
+    #     self.n_batch += self.train_x.shape[0]
+    #     self.priors = None 
+
+    def __call__(self, models, x_batch, ll_div=None):
         if isinstance(models, nn.Module):
             models = (models, )
         for model in models:
             model.zero_grad()
-        log_likelihoods = [(compute_log_likelihood(self.train_x, self.train_y, model) * self.N_train).backward() for model in models]
-        ll_div = torch.stack([compute_tricky_divergence(model, self.priors) for model in models])  # ll_div для каждой модели
-
+        if ll_div is None:
+            log_likelihoods = [(compute_log_likelihood(self.train_x, self.train_y, model) * self.N_train).backward() for model in models]
+            #ll_div = torch.stack([compute_tricky_divergence(model, self.priors) for model in models])  # ll_div для каждой модели
+            ll_div = torch.stack([compute_concat_gradient(model, self.priors) for model in models])
         models_weights = torch.stack([state_dict_to_vec(model.state_dict()) for model in models])  # батч моделей
         models_weights.requires_grad = True
         psy_value = self.psy_model(models_weights, x_batch)  # хотим тензор число моделей X число примеров
-        psy_func = partial(self.psy_model, x=x_batch)
-        # psy_div = compute_tricky_divergence(self.psy_model)
-        # psy_div = torch.autograd.grad(psy_value, models_weights, retain_graph=True, grad_outputs=torch.ones(psy_value.shape[0], x_batch.shape[0]))[0]  # psy_div для каждой модели
-        psy_jac = torch.autograd.functional.jacobian(psy_func, models_weights, create_graph=True)
-        psy_div = torch.einsum('ijil->ij', psy_jac)  # я чет завис с размерностями: i - n_models, j - n_images, l - n_weights
-        ncv_value = psy_value * ll_div.unsqueeze(-1) + psy_div
-
+        
+        if isinstance(self.psy_model, PsyConstVector):
+            psy_div = 0.
+        else:
+            psy_func = partial(self.psy_model, x=x_batch)
+            psy_jac = torch.autograd.functional.jacobian(psy_func, models_weights, create_graph=True)
+            psy_div = torch.einsum('ijil->ij', psy_jac)  # я чет завис с размерностями: i - n_models, j - n_images, l - n_weights
+        if psy_value.ndim == 2:
+            if ll_div.ndim == 2:
+                psy_value = psy_value.unsqueeze(-1).repeat(1, 1, ll_div.shape[-1])
+        # ncv_value = psy_value * ll_div.unsqueeze(-1) + psy_div
+        ncv_value = torch.einsum('ijk,ik->ij', psy_value, ll_div) + psy_div
         return ncv_value
 
 
@@ -57,13 +78,22 @@ class BasePsy(nn.Module):
             nn.init.zeros_(p)
 
 
+class PsyConstVector(BasePsy):
+    def __init__(self, input_dim):
+        super().__init__()
+        self.param = nn.Parameter(torch.zeros(input_dim))
+
+    def forward(self, weights, x):
+        return self.param.repeat([weights.shape[0], x.shape[0], 1])
+
+
 class PsyLinear(BasePsy):
     def __init__(self, input_dim):
         super().__init__()
         self.layer = nn.Linear(input_dim, 1)#, bias=False)
 
     def forward(self, weights, x):
-        return self.layer(weights).repeat(1, x.shape[0])
+        return reshape_m_i(self.layer(weights), x)[0].squeeze(-1)
 
 
 class PsyMLP(BasePsy):
@@ -136,10 +166,11 @@ class PsyConv(BasePsy):
             nn.MaxPool2d(2),
             nn.Conv2d(in_channels=2, out_channels=3, kernel_size=3),
             nn.MaxPool2d(2),
-            nn.ReLU()
+            nn.ReLU(),
+            nn.Flatten()
         )
 
-        self.alpha = nn.Linear(in_features=hidden_size, out_features=1)
+        self.alpha = nn.Linear(in_features=hidden_size, out_features=1, bias=False)
 
     def forward(self, weights, x):
-        return self.alpha(sum(reshape_m_i(self.weights_block(weights), self.image_block(x))))
+        return self.alpha(F.sigmoid(sum(reshape_m_i(self.weights_block(weights), self.image_block(x))))).squeeze(-1)
