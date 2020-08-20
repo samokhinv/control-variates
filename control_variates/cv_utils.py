@@ -42,18 +42,26 @@ def compute_log_likelihood(x, y, model):
     return log_likelihood
 
 
+def compute_ll_div(models, train_x, train_y, N_train, priors=None):
+    for model in models:
+        model.zero_grad()
+    log_likelihoods = [(compute_log_likelihood(train_x, train_y, model) * N_train).backward() for model in models]
+    ll_div = torch.stack([compute_concat_gradient(model, priors) for model in models])
+    return ll_div
+
+
 def compute_mc_estimate(function: callable, models, x: torch.tensor):
-    return sum(function(model, x) for model in models) / len(models)
+    return function(models, x).sum(0) / len(models)
 
 
-def compute_naive_variance(function: callable, control_variate: callable, models, x: torch.tensor):
+def compute_naive_variance(function: callable, control_variate: callable, models, x: torch.tensor, ll_div=None):
     def diff(model_, x_):
-        return function(model_, x_) - control_variate(model_, x_)
+        return function(model_, x_) - control_variate(model_, x_, ll_div=ll_div)
 
     sample_mean = compute_mc_estimate(diff, models, x)
     sample_mean_no_cv = compute_mc_estimate(function, models, x)
-    v = sum((diff(model, x) - sample_mean)**2 for model in models) / (len(models) - 1)
-    v_no_cv = sum((function(model, x) - sample_mean_no_cv)**2 for model in models) / (len(models) - 1)
+    v = ((diff(models, x) - sample_mean) ** 2).sum(0) / (len(models) - 1)
+    v_no_cv = ((function(models, x) - sample_mean_no_cv)**2).sum(0) / (len(models) - 1)
 
     return v, v_no_cv
 

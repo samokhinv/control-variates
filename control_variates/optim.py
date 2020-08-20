@@ -14,8 +14,8 @@ class BaseOptimizer(Optimizer):
         raise NotImplementedError
 
     def resample_prior(self, p):
-        alpha = self.alpha0 + p.data.nelement() / 2
-        beta = self.beta0 + (p.data ** 2).sum().item() / 2
+        alpha = self.alpha0 #+ p.data.nelement() / 2
+        beta = self.beta0 #+ (p.data ** 2).sum().item() / 2
         return gamma(shape=alpha, scale=1 / beta)  # gamma sample
 
 
