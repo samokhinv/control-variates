@@ -47,6 +47,7 @@ class SteinCV:
             models = (models, )
         for model in models:
             model.zero_grad()
+<<<<<<< HEAD
         if ll_div is None:
             log_likelihoods = [(compute_log_likelihood(self.train_x, self.train_y, model) * self.N_train).backward() for model in models]
             #ll_div = torch.stack([compute_tricky_divergence(model, self.priors) for model in models])  # ll_div для каждой модели
@@ -63,6 +64,19 @@ class SteinCV:
             psy_div = torch.einsum('ijil->ij', psy_jac)  # я чет завис с размерностями: i - n_models, j - n_images, l - n_weights
         if psy_value.ndim == 2:
             if ll_div.ndim == 2:
+=======
+        log_likelihoods = [(compute_log_likelihood(self.train_x, self.train_y, model) * self.N_train).backward() for model in models]
+        #ll_div = torch.stack([compute_tricky_divergence(model, self.priors) for model in models])  # ll_div для каждой модели
+        ll_div = torch.stack([compute_concat_gradient(model, self.priors) for model in models])
+        models_weights = torch.stack([state_dict_to_vec(model.state_dict()) for model in models])  # батч моделей
+        models_weights.requires_grad = True
+        psy_value = self.psy_model(models_weights, x_batch)  # хотим тензор число моделей X число примеров
+        psy_func = partial(self.psy_model, x=x_batch)
+        psy_jac = torch.autograd.functional.jacobian(psy_func, models_weights, create_graph=True)
+        psy_div = torch.einsum('ijil->ij', psy_jac)  # я чет завис с размерностями: i - n_models, j - n_images, l - n_weights
+        if psy_value.ndim == 2:
+            if ll_div.ndim == 3:
+>>>>>>> 9ebea3056a9d435a3af66feace87cbfe1d088b87
                 psy_value = psy_value.unsqueeze(-1).repeat(1, 1, ll_div.shape[-1])
         # ncv_value = psy_value * ll_div.unsqueeze(-1) + psy_div
         ncv_value = torch.einsum('ijk,ik->ij', psy_value, ll_div) + psy_div
@@ -78,13 +92,21 @@ class BasePsy(nn.Module):
             nn.init.zeros_(p)
 
 
+<<<<<<< HEAD
 class PsyConstVector(BasePsy):
+=======
+class PsyConstVecor(BasePsy):
+>>>>>>> 9ebea3056a9d435a3af66feace87cbfe1d088b87
     def __init__(self, input_dim):
         super().__init__()
         self.param = nn.Parameter(torch.zeros(input_dim))
 
     def forward(self, weights, x):
+<<<<<<< HEAD
         return self.param.repeat([weights.shape[0], x.shape[0], 1])
+=======
+        return torch.repeat(self.param, [weights.shape[0], x.shape[0], 1])
+>>>>>>> 9ebea3056a9d435a3af66feace87cbfe1d088b87
 
 
 class PsyLinear(BasePsy):
