@@ -28,13 +28,13 @@ class ClassificationUncertaintyMCMC(object):
     def parallel_predictions(self, x):
         with Parallel(n_jobs=-2, backend='threading') as p:
             predictions = p(_get_prediction(*args) for args in zip(self.models, repeat(x)))
-        return torch.stack(predictions, dim=0).squeeze()
+        return torch.stack(predictions, dim=0)
 
     def get_predictions(self, x):
         predictions = []
         for model in self.models:
             predictions.append(F.softmax(model(x), dim=-1)[..., -1])  # p(y=1|x,\theta)
-        return torch.stack(predictions, dim=0).squeeze()
+        return torch.stack(predictions, dim=0)
 
     def get_cv_values(self, x):
         # weights = torch.stack([state_dict_to_vec(model.state_dict()) for model in self.models], dim=0)
