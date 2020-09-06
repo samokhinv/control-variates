@@ -16,7 +16,7 @@ def load_mnist_dataset(data_dir, batch_size, classes=None):
         transforms.Normalize(mean=(0.1307,), std=(0.3081,))
     ])
 
-    Path(data_dir).mkdir(exist_ok=True)
+    Path(data_dir).mkdir(exist_ok=True, parents=True)
     trainset = datasets.MNIST(root=data_dir, train=True, download=True, transform=transform_train)
     valset = datasets.MNIST(root=data_dir, train=False, download=True, transform=transform_test)
 

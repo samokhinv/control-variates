@@ -14,12 +14,12 @@ class BaseOptimizer(Optimizer):
         raise NotImplementedError
 
     def resample_prior(self, p):
-        alpha = self.alpha0 #+ p.data.nelement() / 2
-        beta = self.beta0 #+ (p.data ** 2).sum().item() / 2
+        alpha = self.alpha0 + p.data.nelement() / 2
+        beta = self.beta0 + (p.data ** 2).sum().item() / 2
         return gamma(shape=alpha, scale=1 / beta)  # gamma sample
 
 
-class LangevinSGD(BaseOptimizer):
+class SGLD(BaseOptimizer):
     def __init__(self,
                  params,
                  lr: float = 1e-3,
@@ -36,18 +36,15 @@ class LangevinSGD(BaseOptimizer):
         if weight_decay <= 0.0:
             raise ValueError("Invalid weight_decay value: {}".format(weight_decay))
 
-
         defaults = dict(lr=lr)
 
-        super(LangevinSGD, self).__init__(params, defaults)
-
-
+        super(SGLD, self).__init__(params, defaults)
 
     @torch.no_grad()
     def step(self, burn_in=None, resample_momentum=None, resample_prior=False):  # the same call as for HMC
         resample_prior = False
         loss = None
-        sum_grad = 0
+        flat_grad = []
         for group in self.param_groups:
             for p in group['params']:
                 if p.grad is None:
@@ -64,10 +61,12 @@ class LangevinSGD(BaseOptimizer):
                 if weight_decay != 0:
                     d_p.add_(p, alpha=weight_decay)
 
-                sum_grad += d_p.sum().item()
+                flat_grad.append(d_p.flatten())
+
                 unit_noise = p.new_empty(p.size()).normal_()
                 p.add_(0.5 * d_p + unit_noise / group['lr'] ** 0.5, alpha=-group['lr'])
-        return loss, sum_grad
+        flat_grad = torch.cat(flat_grad, dim=0)
+        return loss, flat_grad
 
 
 class ScaleAdaSGHMC(BaseOptimizer):
@@ -126,7 +125,7 @@ class ScaleAdaSGHMC(BaseOptimizer):
         """Simulate discretized Hamiltonian dynamics for one step"""
         resample_prior = False
         loss = None
-        sum_grad = 0
+        flat_grad = []
         for group in self.param_groups:  # iterate over blocks -> the ones defined in defaults. We dont use groups.
             for p in group["params"]:  # these are weight and bias matrices
                 if p.grad is None:
@@ -153,7 +152,7 @@ class ScaleAdaSGHMC(BaseOptimizer):
                 d_p = p.grad
                 if weight_decay != 0:
                     d_p.add_(p.data, alpha=weight_decay)
-                sum_grad += d_p.sum().item()
+                flat_grad.append(d_p.flatten())
                 # update parameters during burn-in
                 if burn_in:  # We update g first as it makes most sense
                     tau.add_(-tau * (g ** 2) /
@@ -180,8 +179,8 @@ class ScaleAdaSGHMC(BaseOptimizer):
 
                 # update theta (Eq 10 left in [1])
                 p.add_(v_momentum)
-
-        return loss, sum_grad
+        flat_grad = torch.cat(flat_grad, dim=0)
+        return loss, flat_grad
 
 
 class SGHMC(BaseOptimizer):
