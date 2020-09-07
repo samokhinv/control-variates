@@ -68,7 +68,10 @@ def main(args):
     N_train = len(train_dl.dataset)
 
     x, _ = train_dl.dataset[0]
-    args.input_dim = x.shape[-1]
+
+    args.input_dim = 1
+    for d in x.shape:
+        args.input_dim *= d
 
     trajectories = [[LogRegression(args.input_dim)
                  for j in range(len(samples[i][0]))]
