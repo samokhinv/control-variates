@@ -1,6 +1,7 @@
 from control_variates.model import MLP
 from control_variates.optim import  SGLD, ScaleAdaSGHMC as H_SA_SGHMC
 from mnist_utils import load_mnist_dataset
+from UCI_utils import load_uci_dataset
 from control_variates.trainer import BNNTrainer
 import torch
 from torch.nn import functional as F
@@ -51,6 +52,8 @@ def parse_arguments():
     parser.add_argument('--n_samples', type=int, default=10)
     parser.add_argument('--seed', type=int, default=None)
     parser.add_argument('--save_path', type=str)
+    parser.add_argument('--data_dir', type=str)
+    parser.add_argument('--dataset', type=str, choices=['mnist', 'uci'], default='mnist')
     args = parser.parse_args()
 
     return args
@@ -64,9 +67,12 @@ def main(args):
     init_seed = random.randint(0, 100500)
 
     device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
-
-    Path('data', 'mnist').mkdir(exist_ok=True, parents=True)
-    trainloader, valloader = load_mnist_dataset(Path('data', 'mnist'), args.batch_size, classes=args.classes)
+ 
+    if args.dataset == 'mnist':
+        Path(args.data_dir).mkdir(exist_ok=True, parents=True)
+        trainloader, valloader = load_mnist_dataset(Path(args.data_dir), args.batch_size, classes=args.classes)
+    elif args.dataset == 'uci':
+        trainloader, valloader = load_mnist_dataset(Path(args.data_dir), args.batch_size)
    
     def nll_func(y_hat, y):
         nll = F.cross_entropy(y_hat, y, reduction='sum')
