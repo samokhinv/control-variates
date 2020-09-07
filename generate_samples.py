@@ -1,5 +1,5 @@
 from control_variates.model import MLP
-from control_variates.optim import LangevinSGD as SGLD, ScaleAdaSGHMC as H_SA_SGHMC
+from control_variates.optim import  SGLD, ScaleAdaSGHMC as H_SA_SGHMC
 from mnist_utils import load_mnist_dataset
 from control_variates.trainer import BNNTrainer
 import torch
@@ -32,7 +32,7 @@ def random_seed(seed):
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--bnn_lr', type=float, default=1e-3)
+    parser.add_argument('--bnn_lr', type=float, default=1e-7)
     parser.add_argument('--batch_size', type=int, default=500)
     parser.add_argument('--n_hidden_layers', type=int, default=0)
     parser.add_argument('--hidden_dim', type=int, default=0)
@@ -115,7 +115,7 @@ def main(args):
 
         all_weights_and_priors.append((weights_set, priors))
 
-        pickle.dump(all_weights_and_priors, Path(args.save_path, f'{args.n_samples}_samples_seed{args.seed}.pkl').open('wb'))
+        pickle.dump(all_weights_and_priors, Path(args.save_path).open('wb'))
 
 
 if __name__ == '__main__':
