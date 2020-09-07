@@ -54,14 +54,14 @@ def compute_mc_estimate(function: callable, models, x: torch.tensor):
     return function(models, x).sum(0) / len(models)
 
 
-def compute_naive_variance(control_variate: callable, models, x: torch.tensor, ll_div=None):
-    no_cv_predictions = torch.stack([F.softmax(model(x), -1)[..., -1] for model in models])
-    cv_s = control_variate(models, x, ll_div)
-    predictions_with_cv = no_cv_predictions - cv_s
-    # sample_mean = compute_mc_estimate(diff, models, x)
-    #sample_mean_no_cv = compute_mc_estimate(function, models, x)
-    v = predictions_with_cv.var(0, unbiased=True)
-    v_no_cv = no_cv_predictions.var(0, unbiased=True)
+def compute_naive_variance(function: callable, control_variate: callable, models, x: torch.tensor, ll_div=None):
+    def diff(model_, x_):
+        return function(model_, x_) - control_variate(model_, x_, ll_div=ll_div)
+
+    sample_mean = compute_mc_estimate(diff, models, x)
+    sample_mean_no_cv = compute_mc_estimate(function, models, x)
+    v = ((diff(models, x) - sample_mean) ** 2).sum(0) / (len(models) - 1)
+    v_no_cv = ((function(models, x) - sample_mean_no_cv)**2).sum(0) / (len(models) - 1)
 
     return v, v_no_cv
 

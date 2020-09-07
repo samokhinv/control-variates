@@ -42,7 +42,6 @@ class SGLD(BaseOptimizer):
 
     @torch.no_grad()
     def step(self, burn_in=None, resample_momentum=None, resample_prior=False):  # the same call as for HMC
-        resample_prior = False
         loss = None
         flat_grad = []
         for group in self.param_groups:
@@ -123,7 +122,6 @@ class ScaleAdaSGHMC(BaseOptimizer):
     @torch.no_grad()
     def step(self, burn_in=False, resample_momentum=False, resample_prior=False):
         """Simulate discretized Hamiltonian dynamics for one step"""
-        resample_prior = False
         loss = None
         flat_grad = []
         for group in self.param_groups:  # iterate over blocks -> the ones defined in defaults. We dont use groups.

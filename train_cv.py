@@ -39,24 +39,27 @@ def parse_arguments():
     parser.add_argument('--samples_path', type=str, required=True)
     parser.add_argument('--cv_type', type=str, choices=['const', 'mlp'], default='const')
     parser.add_argument('--device', type=str, default='cpu')
-    parser.add_arguemnt('--data_dir', type=str, default='../data/mnist')
-    parser.add_arguemnt('--classes', type=int, nargs='+', default=[3, 5])
+    parser.add_argument('--data_dir', type=str, default='../data/mnist')
+    parser.add_argument('--classes', type=int, nargs='+', default=[3, 5])
     parser.add_argument('--save_path', type=str, required=True)
+    parser.add_argument('--seed', type=int, default=42)
 
     args = parser.parse_args()
     return args
 
 
 def main(args):
-    random_seed(seed)
+    random_seed(args.seed)
     device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
     
-    with Path(args.samples_path).open(rb) as fp:
+    with Path(args.samples_path).open('rb') as fp:
         samples = pickle.load(fp)
 
-    print(f'N samples: {len(samples)}, volume of sample: {len(samples[0])}')
+    print(f'N samples: {len(samples)}, volume of sample: {len(samples[0][0])}')
 
-    Path.mkdir(args.data_dir, exist_ok=True, parents=True)
+    Path.mkdir(Path(args.data_dir), exist_ok=True, parents=True)
+    if args.batch_size == -1:
+        args.batch_size = 20000
     train_dl, valid_dl = load_mnist_dataset(args.data_dir, args.batch_size, classes=[3, 5])
     N_train = len(train_dl.dataset)
 
