@@ -34,10 +34,10 @@ def parse_arguments():
     parser.add_argument('--n_cv_iter', default=100, type=int)
     parser.add_argument('--batch_size', default=-1, type=int)
     parser.add_argument('--width', type=int, default=100)
-    parser.add_argument('--depth', type=int, default=0)
+    parser.add_argument('--depth', type=int, default=1)
     parser.add_argument('--output_dim', type=int, default=2)
     parser.add_argument('--samples_path', type=str, required=True)
-    parser.add_argument('--cv_type', type=str, choices=['const', 'mlp'], default='const')
+    parser.add_argument('--psy_type', type=str, choices=['const', 'mlp', 'linear'], default='const')
     parser.add_argument('--device', type=str, default='cpu')
     parser.add_argument('--classes', type=int, nargs='+', default=[3, 5])
     parser.add_argument('--save_path', type=str, required=True)
@@ -99,9 +99,14 @@ def main(args):
     x = (x_new[y_new == 1.0])[[43]]
 
     ncv_s = []
-    psy_input_dim = state_dict_to_vec(trajectories[0][0]).shape[0]
+    psy_input_dim = state_dict_to_vec(trajectories[0][0].state_dict()).shape[0]
     for models, pr in zip(trajectories, priors):
-        psy_model = PsyConstVector(psy_input_dim)
+        if args.psy_type == 'const':
+            psy_model = PsyConstVector(input_dim=psy_input_dim)
+        elif args.psy_type == 'linear':
+            psy_model = PsyLinear(input_dim=psy_input_dim)
+        elif args.psy_type == 'mlp':
+            psy_model = PsyMLP(input_dim=psy_input_dim, width=args.width, depth=args.depth)
         psy_model.init_zero()
         psy_model.to(device)
 
