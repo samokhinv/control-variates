@@ -19,7 +19,6 @@ import numpy as np
 from tqdm import tqdm
 import argparse
 
-INPUT_DIM = 784
 
 mcmc_grdadients = {'sgld': SGLD, 'sghmc': H_SA_SGHMC}
 
@@ -54,6 +53,7 @@ def parse_arguments():
     parser.add_argument('--save_path', type=str)
     parser.add_argument('--data_dir', type=str)
     parser.add_argument('--dataset', type=str, choices=['mnist', 'uci'], default='mnist')
+    parser.add_argument('--input_dim', type=int, default=784)
     args = parser.parse_args()
 
     return args
@@ -72,7 +72,7 @@ def main(args):
         Path(args.data_dir).mkdir(exist_ok=True, parents=True)
         trainloader, valloader = load_mnist_dataset(Path(args.data_dir), args.batch_size, classes=args.classes)
     elif args.dataset == 'uci':
-        trainloader, valloader = load_mnist_dataset(Path(args.data_dir), args.batch_size)
+        trainloader, valloader = load_uci_dataset(Path(args.data_dir), args.batch_size)
    
     def nll_func(y_hat, y):
         nll = F.cross_entropy(y_hat, y, reduction='sum')
@@ -89,9 +89,9 @@ def main(args):
         seed = random.randint(0, 100500)
         torch.manual_seed(init_seed)
         if args.n_hidden_layers == 0:
-            model = LogRegression(INPUT_DIM)
+            model = LogRegression(args.input_dim)
         else:
-            model = MLP(input_dim=INPUT_DIM, width=args.hidden_dim, depth=args.n_hidden_layers, output_dim=len(args.classes))
+            model = MLP(input_dim=args.input_dim, width=args.hidden_dim, depth=args.n_hidden_layers, output_dim=len(args.classes))
         random_seed(seed)
         
         optimizer = mcmc_class(model.parameters(), lr=args.bnn_lr, alpha0=args.alpha0, beta0=args.beta0)
@@ -106,7 +106,8 @@ def main(args):
             resample_prior_every=float('inf'), #args.resample_prior_every,
             resample_momentum_every=args.resample_momentum_every,
             save_freq=args.save_freq,
-            batch_size=args.batch_size
+            batch_size=args.batch_size,
+            report_every=args.report_every
             )
         trainer.train(n_epoch=args.n_epoch, burn_in_epochs=args.burn_in_epochs, resample_prior_until=args.resample_prior_until)
         weights_set = trainer.weight_set_samples#[-(args.n_epoch - args.burn_in_epochs) // args.save_freq:]

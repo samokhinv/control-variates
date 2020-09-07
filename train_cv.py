@@ -8,6 +8,7 @@ import argparse
 from pathlib import Path
 
 from mnist_utils import load_mnist_dataset
+from UCI_utils import load_uci_dataset
 import control_variates
 from control_variates.model import LogRegression
 from control_variates.cv import PsyLinear, SteinCV, PsyConstVector, PsyMLP
@@ -32,17 +33,17 @@ def parse_arguments():
     parser.add_argument('--cv_lr', default=1e-6, type=float)
     parser.add_argument('--n_cv_iter', default=100, type=int)
     parser.add_argument('--batch_size', default=-1, type=int)
-    parser.add_argument('--input_dim', default=784, type=int)
     parser.add_argument('--width', type=int, default=100)
     parser.add_argument('--depth', type=int, default=0)
     parser.add_argument('--output_dim', type=int, default=2)
     parser.add_argument('--samples_path', type=str, required=True)
     parser.add_argument('--cv_type', type=str, choices=['const', 'mlp'], default='const')
     parser.add_argument('--device', type=str, default='cpu')
-    parser.add_argument('--data_dir', type=str, default='../data/mnist')
     parser.add_argument('--classes', type=int, nargs='+', default=[3, 5])
     parser.add_argument('--save_path', type=str, required=True)
     parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--data_dir', type=str, default='..data/mnist')
+    parser.add_argument('--dataset', type=str, choices=['mnist', 'uci'], default='mnist')
 
     args = parser.parse_args()
     return args
@@ -57,11 +58,17 @@ def main(args):
 
     print(f'N samples: {len(samples)}, volume of sample: {len(samples[0][0])}')
 
-    Path.mkdir(Path(args.data_dir), exist_ok=True, parents=True)
-    if args.batch_size == -1:
-        args.batch_size = 20000
-    train_dl, valid_dl = load_mnist_dataset(args.data_dir, args.batch_size, classes=[3, 5])
+    if args.dataset == 'mnist':
+        Path.mkdir(Path(args.data_dir), exist_ok=True, parents=True)
+        if args.batch_size == -1:
+            args.batch_size = 20000
+        train_dl, valid_dl = load_mnist_dataset(args.data_dir, args.batch_size, classes=[3, 5])
+    elif args.dataset == 'uci':
+        train_dl, valid_dl = load_uci_dataset(args.data_dir, batch_size=args.batch_size)
     N_train = len(train_dl.dataset)
+
+    x, _ = train_dl.dataset[0]
+    args.input_dim = x.shape[-1]
 
     trajectories = [[LogRegression(args.input_dim)
                  for j in range(len(samples[i][0]))]
@@ -89,7 +96,7 @@ def main(args):
     x = (x_new[y_new == 1.0])[[43]]
 
     ncv_s = []
-    psy_input_dim = 1570
+    psy_input_dim = state_dict_to_vec(trajectories[0][0]).shape[0]
     for models, pr in zip(trajectories, priors):
         psy_model = PsyConstVector(psy_input_dim)
         psy_model.init_zero()
