@@ -103,11 +103,12 @@ def main(args):
     for models, pr in zip(trajectories, priors):
         if args.psy_type == 'const':
             psy_model = PsyConstVector(input_dim=psy_input_dim)
+            psy_model.init_zero()
         elif args.psy_type == 'linear':
             psy_model = PsyLinear(input_dim=psy_input_dim)
         elif args.psy_type == 'mlp':
             psy_model = PsyMLP(input_dim=psy_input_dim, width=args.width, depth=args.depth)
-        psy_model.init_zero()
+        #psy_model.init_zero()
         psy_model.to(device)
 
         neural_control_variate = SteinCV(psy_model, train_x, train_y, pr, N_train)
