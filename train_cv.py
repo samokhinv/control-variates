@@ -12,7 +12,7 @@ from UCI_utils import load_uci_dataset
 import control_variates
 from control_variates.model import LogRegression
 from control_variates.cv import PsyLinear, SteinCV, PsyConstVector, PsyMLP
-from control_variates.cv_utils import state_dict_to_vec, compute_naive_variance
+from control_variates.cv_utils import state_dict_to_vec, compute_naive_variance, compute_ll_div
 from control_variates.model import get_binary_prediction
 from control_variates.uncertainty_quantification import ClassificationUncertaintyMCMC
 from control_variates.cv_utils import trapezoidal_kernel, SpectralVariance
@@ -89,13 +89,6 @@ def main(args):
     def centr_regularizer(ncv, models, x, ll_div=None):
         return (ncv(models, x, ll_div).mean(0))**2
 
-    def compute_ll_div(models, train_x, train_y, N_train, priors=None):
-        for model in models:
-            model.zero_grad()
-        log_likelihoods = [(compute_log_likelihood(train_x, train_y, model) * N_train).backward() for model in models]
-        ll_div = torch.stack([compute_concat_gradient(model, priors) for model in models])
-        return ll_div
-
     x = (x_new[y_new == 1.0])[[43]]
 
     ncv_s = []
@@ -115,7 +108,7 @@ def main(args):
         ncv_optimizer = torch.optim.Adam(psy_model.parameters(), lr=args.cv_lr, weight_decay=0.0) #1e-4)
         uncertainty_quant = ClassificationUncertaintyMCMC(models, neural_control_variate)
         train_x, train_y = next(iter(train_dl))
-        ll_div = compute_ll_div(models, train_x, train_y, N_train, priors=priors)
+        ll_div = compute_ll_div(models, train_x, train_y, N_train, priors=pr)
         function_f = lambda model, x: get_binary_prediction(model, x, classes=[0, 1])
         history = []
 
