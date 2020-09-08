@@ -57,7 +57,7 @@ class BNNTrainer(object):
             train_err, val_err = 0, 0
             n_ex = 0
             self.model.train()
-            burn_in = epoch < burn_in_epochs
+            #burn_in = epoch < burn_in_epochs
             for x, y in self.trainloader:
                 resample_prior = (it_cnt % self.resample_prior_every == 0) and \
                 (epoch < resample_prior_until) and (epoch < burn_in_epochs)
@@ -71,6 +71,11 @@ class BNNTrainer(object):
 
                 if epoch > burn_in_epochs and it_cnt % self.save_freq == 0:
                     self.save_sampled_net()
+            
+            potential = self.compute_potential()
+            self.optimizer.zero_grad()
+            potential.backward()
+            grad = self.get_potential_grad(add_prior_grad=False)
 
             n_ex = 0
             self.model.eval()
@@ -84,8 +89,8 @@ class BNNTrainer(object):
 
             if epoch % self.report_every == 0:
                 logger.info(f'Epoch {epoch} finished. Val loss {val_loss / n_ex}, Val error {val_err / n_ex}')
-                logger.info(f'Potential: {self.potential_sample[-1]}')
-                logger.info(f'Potential grad: {self.potential_grad_sample[-1]}')
+                logger.info(f'Potential: {potential}')
+                logger.info(f'Potential grad: {grad}')
             if self.early_stopping:
                 if val_loss / n_ex - best_loss < -self.min_delta:
                     best_loss = val_loss / n_ex
