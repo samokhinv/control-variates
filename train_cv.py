@@ -80,7 +80,7 @@ def main(args):
     trajectories, priors, potential_grads = load_samples(
         args.samples_path,
         model_class=LogRegression, 
-        model_kwargs={'input_dim': args.input_dim})
+        model_kwargs={'input_size': args.input_dim})
     if potential_grads is None:
         potential_grads = [compute_potential_grad(ms, train_x, train_y, N_train, priors=ps) for ms, ps in zip(trajectories, priors)]
     
