@@ -71,12 +71,7 @@ class BNNTrainer(object):
 
                 if epoch > burn_in_epochs and it_cnt % self.save_freq == 0:
                     self.save_sampled_net()
-            
-            potential = self.compute_potential()
-            self.optimizer.zero_grad()
-            potential.backward()
-            grad = self.get_potential_grad(add_prior_grad=False)
-
+        
             n_ex = 0
             self.model.eval()
             for x, y in self.valloader:
@@ -88,6 +83,11 @@ class BNNTrainer(object):
                     n_ex += x.shape[0]
 
             if epoch % self.report_every == 0:
+                potential = self.compute_potential()
+                self.optimizer.zero_grad()
+                potential.backward()
+                grad = self.get_potential_grad(add_prior_grad=False)
+
                 logger.info(f'Epoch {epoch} finished. Val loss {val_loss / n_ex}, Val error {val_err / n_ex}')
                 logger.info(f'Potential: {potential}')
                 logger.info(f'Potential grad: {grad}')

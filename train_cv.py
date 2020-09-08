@@ -7,6 +7,7 @@ from copy import deepcopy
 import argparse
 from pathlib import Path
 
+from utils import load_samples
 from mnist_utils import load_mnist_dataset
 from UCI_utils import load_uci_dataset
 import control_variates
