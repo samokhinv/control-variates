@@ -54,9 +54,9 @@ def compute_mc_estimate(function: callable, models, x: torch.tensor):
     return function(models, x).sum(0) / len(models)
 
 
-def compute_naive_variance(function: callable, control_variate: callable, models, x: torch.tensor, ll_grad=None):
+def compute_naive_variance(function: callable, control_variate: callable, models, x: torch.tensor, potential_grad=None):
     def diff(model_, x_):
-        return function(model_, x_) - control_variate(model_, x_, ll_grad=ll_grad)
+        return function(model_, x_) - control_variate(model_, x_, potential_grad=potential_grad)
 
     sample_mean = compute_mc_estimate(diff, models, x)
     sample_mean_no_cv = compute_mc_estimate(function, models, x)
