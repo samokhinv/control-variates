@@ -3,6 +3,7 @@ from control_variates.optim import  SGLD, ScaleAdaSGHMC as H_SA_SGHMC
 from mnist_utils import load_mnist_dataset
 from UCI_utils import load_uci_dataset
 from control_variates.trainer import BNNTrainer
+from control_variates.cv_utils import compute_ll_div
 import torch
 from torch.nn import functional as F
 from control_variates.model import LogRegression
@@ -64,7 +65,7 @@ def main(args):
         random_seed(args.seed)
     else:
         args.seed = -1
-    init_seed = random.randint(0, 100500)
+    #init_seed = random.randint(0, 100500)
 
     device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
  
@@ -83,16 +84,24 @@ def main(args):
         return err
 
     mcmc_class = mcmc_grdadients[args.mcmc_gradient]
-    all_weights_and_priors = []
+    weights_grads_priors = []
 
-    for _ in range(args.n_samples):
-        seed = random.randint(0, 100500)
-        torch.manual_seed(init_seed)
+    def init_model(state_dict=None):
         if args.n_hidden_layers == 0:
             model = LogRegression(args.input_dim)
         else:
             model = MLP(input_dim=args.input_dim, width=args.hidden_dim, depth=args.n_hidden_layers, output_dim=len(args.classes))
-        random_seed(seed)
+        if state_dict is not None:
+            model.load_state_dict(state_dict)
+        return model
+
+    initial_state_dict = init_model().state_dict()
+
+    for _ in range(args.n_samples):
+        #seed = random.randint(0, 100500)
+        #torch.manual_seed(init_seed)
+        model = init_model(initial_state_dict)
+        #random_seed(seed)
         
         optimizer = mcmc_class(model.parameters(), lr=args.bnn_lr, alpha0=args.alpha0, beta0=args.beta0)
 
@@ -103,26 +112,27 @@ def main(args):
             trainloader, 
             valloader, 
             device=device, 
-            resample_prior_every=float('inf'), #args.resample_prior_every,
+            resample_prior_every=args.resample_prior_every,
             resample_momentum_every=args.resample_momentum_every,
             save_freq=args.save_freq,
             batch_size=args.batch_size,
             report_every=args.report_every
             )
         trainer.train(n_epoch=args.n_epoch, burn_in_epochs=args.burn_in_epochs, resample_prior_until=args.resample_prior_until)
-        weights_set = trainer.weight_set_samples#[-(args.n_epoch - args.burn_in_epochs) // args.save_freq:]
+        weights_sample = trainer.weight_set_sample
+        potential_grad_sample = trainer.potential_grad_sample
 
         opt_with_priors = trainer.optimizer
         priors = {}
         group_params = opt_with_priors.param_groups[0]['params']
-        for (n, _), p in zip(weights_set[0].items(), group_params):  
+        for (n, _), p in zip(weights_sample[0].items(), group_params):  
             state = opt_with_priors.state[p]  
             priors[n] = state['weight_decay']
         print(priors)
 
-        all_weights_and_priors.append((weights_set, priors))
+        weights_grads_priors.append((weights_sample, potential_grad_sample, priors))
 
-        pickle.dump(all_weights_and_priors, Path(args.save_path).open('wb'))
+        pickle.dump(weights_grads_priors, Path(args.save_path).open('wb'))
 
 
 if __name__ == '__main__':

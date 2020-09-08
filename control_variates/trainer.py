@@ -28,29 +28,26 @@ class BNNTrainer(object):
         self.resample_prior_every = kwargs.get('resample_prior_every', 100)
         self.resample_momentum_every = kwargs.get('resample_momentum_every', 50)
         device = kwargs.get('device', 'cuda:0' if cuda.is_available() else 'cpu')
-        self.max_weight_set_size = kwargs.get('max_weight_set_size', 200)
+        self.max_weight_set_size = kwargs.get('max_weight_set_size', float('inf'))
         self.report_every = kwargs.get('report_every', 10)
         self.save_freq = kwargs.get('save_freq', 2)
         self.batch_size = kwargs.get('batch_size', 500)
-        #self.resample_prior_until = kwargs.get('resample_prior_intil', 100)
-        #self.burn_in_epochs = kwargs.get('burn_in_epoch', 200)
         
         self.device = torch.device(device)
         self.N_train = len(trainloader.dataset)
-        #self.N_train = 1
         print(f'N_train {self.N_train}')
-        self.weight_set_samples = []
+        self.weight_set_sample = []
         self.loss_history = []
         self.err_history = []
-        self.gradient_history = []
-        self.potential_history = []
+        self.potential_grad_sample = []
+        self.potential_sample = []
         
         self.early_stopping = kwargs.get('early_stopping', False)
         if self.early_stopping:
             self.min_delta = kwargs.get('min_delta', 1e-3)
             self.wait = kwargs.get('wait', 10)
 
-    def train(self, n_epoch, burn_in_epochs=0, resample_prior_until=1e8):
+    def train(self, n_epoch, burn_in_epochs=0, resample_prior_until=1):
         best_loss = 1e9
         no_significant_improvement_step = 0
         self.model.to(self.device)
@@ -67,8 +64,6 @@ class BNNTrainer(object):
                 resample_momentum = it_cnt % self.resample_momentum_every == 0
                 loss, err = self.do_train_step(x.to(self.device), y.to(self.device), 
                     resample_prior=resample_prior, resample_momentum=resample_momentum)
-                #if resample_prior:
-                #    self.weight_set_samples = []
                 train_loss += loss
                 train_err += err
                 n_ex += x.shape[0]
@@ -76,18 +71,6 @@ class BNNTrainer(object):
 
                 if epoch > burn_in_epochs and it_cnt % self.save_freq == 0:
                     self.save_sampled_net()
-
-
-                #loc_iter = n_iter % self.N_train
-                #if (loc_iter + 1) % self.report_every == 0:
-                #    logger.info(f'Iteration {n_iter}, Loss {train_loss /  n_ex}, Error {train_err / n_ex}')
-            
-            potential = self.compute_potential()
-            self.optimizer.zero_grad()
-            potential.backward()
-            grad = self.get_potential_grad(add_prior_grad=False)
-            self.potential_history.append(potential)
-            self.gradient_history.append(grad.detach().numpy())
 
             n_ex = 0
             self.model.eval()
@@ -101,8 +84,8 @@ class BNNTrainer(object):
 
             if epoch % self.report_every == 0:
                 logger.info(f'Epoch {epoch} finished. Val loss {val_loss / n_ex}, Val error {val_err / n_ex}')
-                logger.info(f'Potential: {self.potential_history[-1]}')
-                logger.info(f'Potential grad: {self.gradient_history[-1]}')
+                logger.info(f'Potential: {self.potential_sample[-1]}')
+                logger.info(f'Potential grad: {self.potential_grad_sample[-1]}')
             if self.early_stopping:
                 if val_loss / n_ex - best_loss < -self.min_delta:
                     best_loss = val_loss / n_ex
@@ -130,19 +113,18 @@ class BNNTrainer(object):
 
         self.loss_history.append(nll)
         self.err_history.append(err)
-        #self.gradient_history.append(grad)
         
         return nll, err
 
-    def get_weight_samples(self, Nsamples=0):
-        """return weight samples from posterior in a single-column array"""
+    def get_weight_sample(self, Nsample=0):
+        """return weight sample from posterior in a single-column array"""
         weight_vec = []
 
-        if Nsamples == 0 or Nsamples > len(self.weight_set_samples):
-            Nsamples = len(self.weight_set_samples)
+        if Nsample == 0 or Nsample > len(self.weight_set_sample):
+            Nsample = len(self.weight_set_sample)
 
-        # for idx, state_dict in enumerate(self.weight_set_samples):
-        #     if idx == Nsamples:
+        # for idx, state_dict in enumerate(self.weight_set_sample):
+        #     if idx == Nsample:
         #         break
 
         #     for key in state_dict.keys():
@@ -151,17 +133,20 @@ class BNNTrainer(object):
                 #     for weight in weight_mtx.view(-1):
                 #         weight_vec.append(weight)
 
-        return self.weight_set_samples
+        return self.weight_set_sample
 
     def save_sampled_net(self):
-
-        max_samples = self.max_weight_set_size
-        if len(self.weight_set_samples) >= max_samples:
-            self.weight_set_samples.pop(0)
-
-        self.weight_set_samples.append(copy.deepcopy(self.model.state_dict()))
-
-        return None
+        if len(self.weight_set_sample) >= self.max_weight_set_size:
+            self.weight_set_sample.pop(0)
+            self.potential_sample.pop(0)
+            self.potential_grad_sample.pop(0)
+        self.weight_set_sample.append(copy.deepcopy(self.model.state_dict()))
+        potential = self.compute_potential()
+        self.optimizer.zero_grad()
+        potential.backward()
+        grad = self.get_potential_grad(add_prior_grad=False)
+        self.potential_sample.append(potential)
+        self.potential_grad_sample.append(grad.detach().numpy())
 
     def compute_potential(self):
         potential = 0

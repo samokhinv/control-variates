@@ -42,21 +42,21 @@ def compute_log_likelihood(x, y, model):
     return log_likelihood
 
 
-def compute_ll_div(models, train_x, train_y, N_train, priors=None):
+def compute_potential_grad(models, train_x, train_y, N_train, priors=None):
     for model in models:
         model.zero_grad()
     log_likelihoods = [(compute_log_likelihood(train_x, train_y, model) * N_train).backward() for model in models]
-    ll_div = torch.stack([compute_concat_gradient(model, priors) for model in models])
-    return ll_div
+    potential_grad = -1 * torch.stack([compute_concat_gradient(model, priors) for model in models])
+    return potential_grad
 
 
 def compute_mc_estimate(function: callable, models, x: torch.tensor):
     return function(models, x).sum(0) / len(models)
 
 
-def compute_naive_variance(function: callable, control_variate: callable, models, x: torch.tensor, ll_div=None):
+def compute_naive_variance(function: callable, control_variate: callable, models, x: torch.tensor, ll_grad=None):
     def diff(model_, x_):
-        return function(model_, x_) - control_variate(model_, x_, ll_div=ll_div)
+        return function(model_, x_) - control_variate(model_, x_, ll_grad=ll_grad)
 
     sample_mean = compute_mc_estimate(diff, models, x)
     sample_mean_no_cv = compute_mc_estimate(function, models, x)
