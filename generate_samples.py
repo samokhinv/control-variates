@@ -3,7 +3,7 @@ from control_variates.optim import  SGLD, ScaleAdaSGHMC as H_SA_SGHMC
 from mnist_utils import load_mnist_dataset
 from UCI_utils import load_uci_dataset
 from control_variates.trainer import BNNTrainer
-from control_variates.cv_utils import compute_ll_div
+from control_variates.cv_utils import compute_potential_grad
 import torch
 from torch.nn import functional as F
 from control_variates.model import LogRegression
