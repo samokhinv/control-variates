@@ -1,6 +1,6 @@
 import torch
 from pathlib import Path
-
+import dill as pickle
 
 
 def load_samples(samples_path, model_class, model_kwargs=None):
@@ -25,4 +25,3 @@ def load_samples(samples_path, model_class, model_kwargs=None):
         potential_grads = None
 
     return trajectories, priors, potential_grads
-    
