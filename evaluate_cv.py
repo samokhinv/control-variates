@@ -51,7 +51,7 @@ def main(args):
     device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
 
     if args.dataset == 'mnist':
-        Path.mkdir(Path(args.data_dir), exist_ok=True, parents=True)
+        Path.mkdir(args.data_dir, exist_ok=True, parents=True)
         if args.batch_size == -1:
             args.batch_size = 20000
         train_dl, valid_dl = load_mnist_dataset(args.data_dir, args.batch_size, classes=[3, 5])
@@ -74,7 +74,7 @@ def main(args):
     if potential_grads is None:
         potential_grads = [compute_potential_grad(ms, train_x, train_y, N_train, priors=ps) for ms, ps in zip(trajectories, priors)]
     
-    with Path(args.psy_path.open('rb') as fp:
+    with Path(args.psy_path).open('rb') as fp:
         psy_weights = pickle.load(fp)
     psy_input_dim = state_dict_to_vec(trajectories[0][0]).shape[0]
     psy_model_class = psy_class[args.psy_type]
