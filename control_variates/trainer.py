@@ -61,7 +61,8 @@ class BNNTrainer(object):
             for x, y in self.trainloader:
                 resample_prior = (it_cnt % self.resample_prior_every == 0) and \
                 (epoch < resample_prior_until) and (epoch < burn_in_epochs)
-                resample_momentum = it_cnt % self.resample_momentum_every == 0
+                resample_momentum = (it_cnt % self.resample_momentum_every == 0) and \
+                (epoch < resample_prior_until) and (epoch < burn_in_epochs)
                 loss, err = self.do_train_step(x.to(self.device), y.to(self.device), 
                     resample_prior=resample_prior, resample_momentum=resample_momentum)
                 train_loss += loss
