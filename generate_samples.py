@@ -126,7 +126,7 @@ def main(args):
         priors = {}
         group_params = opt_with_priors.param_groups[0]['params']
         for (n, _), p in zip(weights_sample[0].items(), group_params):  
-            state = opt_with_priors.state[p]  
+            state = opt_with_priors.state[p]  64
             priors[n] = state['weight_decay']
         print(priors)
 

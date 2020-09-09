@@ -57,7 +57,6 @@ class BNNTrainer(object):
             train_err, val_err = 0, 0
             n_ex = 0
             self.model.train()
-            #burn_in = epoch < burn_in_epochs
             for x, y in self.trainloader:
                 resample_prior = (it_cnt % self.resample_prior_every == 0) and \
                 (epoch < resample_prior_until) and (epoch < burn_in_epochs)

@@ -5,6 +5,8 @@ from tqdm import tqdm
 import dill as pickle
 import random
 import torch
+import argparse
+from pathlib import Path
 
 from utils import load_samples
 from control_variates.uncertainty_quantification import ClassificationUncertaintyMCMC
@@ -51,7 +53,7 @@ def main(args):
     device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
 
     if args.dataset == 'mnist':
-        Path.mkdir(args.data_dir, exist_ok=True, parents=True)
+        Path.mkdir(Path(args.data_dir), exist_ok=True, parents=True)
         if args.batch_size == -1:
             args.batch_size = 20000
         train_dl, valid_dl = load_mnist_dataset(args.data_dir, args.batch_size, classes=[3, 5])
@@ -76,7 +78,7 @@ def main(args):
     
     with Path(args.psy_path).open('rb') as fp:
         psy_weights = pickle.load(fp)
-    psy_input_dim = state_dict_to_vec(trajectories[0][0]).shape[0]
+    psy_input_dim = state_dict_to_vec(trajectories[0][0].state_dict()).shape[0]
     psy_model_class = psy_class[args.psy_type]
     psy_models = [psy_model_class(psy_input_dim) for _ in range(len(psy_weights))]
     for i in range(len(psy_weights)):
@@ -96,7 +98,7 @@ def main(args):
             predictions_no_cv.append(uq.estimate_emperical_mean(x.unsqueeze(0), use_cv=False).mean().item())
         fig7, ax7 = plt.subplots()
         ax7.boxplot([predictions_no_cv, predictions_cv])
-        plt.savefig(args.fig_path)
+        plt.savefig(args.figure_path)
 
 
 if __name__ == "__main__":
