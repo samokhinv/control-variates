@@ -3,6 +3,31 @@ from pathlib import Path
 import dill as pickle
 
 
+class DatasetStandarsScaler():
+    def __init__(self, **kwargs):
+        self.use_std = kwargs.get('use_std', True)
+        self.biased = kwargs.get('biased', True)
+        self.mean = kwargs.get('mean', 0)
+        self.std = kwargs.get('std', 1)
+
+    def fit(self, dataset):
+        N = len(dataset)
+        mean = 0
+        var = 0
+        for x, _ in dataset:
+            mean += x
+        self.mean = mean / N
+        for x, _ in dataset:
+            var += (x - self.mean)**2
+        self.std = (var / N)**(0.5)
+        
+    def transform(self, dataset):
+        new_dataset = []
+        for x, y in dataset:
+            new_dataset.append(((x - self.mean) / self.std, y))
+        return new_dataset
+
+
 def load_samples(samples_path, model_class, model_kwargs=None):
     with Path(samples_path).open('rb') as fp:
         samples = pickle.load(fp)

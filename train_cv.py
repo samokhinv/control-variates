@@ -87,7 +87,7 @@ def main(args):
     def centr_regularizer(ncv, models, x, potential_grad=None):
         return (ncv(models, x, potential_grad).mean(0))**2
 
-    x = (x_new[y_new == 1.0])[[43]]
+    x = (x_new[y_new == 1.0])[:100]
 
     ncv_s = []
     psy_input_dim = state_dict_to_vec(trajectories[0][0].state_dict()).shape[0]

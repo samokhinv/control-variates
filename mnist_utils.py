@@ -3,17 +3,18 @@ import torch.utils.data
 from torchvision import transforms, datasets
 from pathlib import Path
 from torch.utils.data import Subset
+from utils import DatasetStandarsScaler
 
 
-def load_mnist_dataset(data_dir, batch_size, classes=None):
+def load_mnist_dataset(data_dir, batch_size, classes=None, normalize=True):
     transform_train = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Normalize(mean=(0.1307,), std=(0.3081,))
+        #transforms.Normalize(mean=(0.1307,), std=(0.3081,))
     ])
 
     transform_test = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Normalize(mean=(0.1307,), std=(0.3081,))
+        #transforms.Normalize(mean=(0.1307,), std=(0.3081,))
     ])
 
     Path(data_dir).mkdir(exist_ok=True, parents=True)
@@ -39,6 +40,12 @@ def load_mnist_dataset(data_dir, batch_size, classes=None):
             idx_to_keep = [i for i, x in enumerate(targets) if x in classes]
             train_idx = target_indices[idx_to_keep]
             valset = Subset(valset, train_idx)
+
+    if normalize is True:
+        scaler = DatasetStandarsScaler()
+        scaler.fit(trainset)
+        trainset = scaler.transform(trainset)
+        valset = scaler.transform(valset)
 
     if torch.cuda.is_available():
         trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, pin_memory=True)

@@ -4,9 +4,10 @@ from torchvision import transforms, datasets
 from pathlib import Path
 from torch.utils.data import Subset
 import dill as pickle
+from utils import DatasetStandarsScaler
 
 
-def load_uci_dataset(data_dir, batch_size, classes=None):
+def load_uci_dataset(data_dir, batch_size, classes=None, normalize=True):
     with Path(data_dir, 'tr_dataset.pkl').open('rb') as fp:
         trainset = pickle.load(fp)
     with Path(data_dir, 'test_dataset.pkl').open('rb') as fp:
@@ -32,10 +33,15 @@ def load_uci_dataset(data_dir, batch_size, classes=None):
     #         train_idx = target_indices[idx_to_keep]
     #         valset = Subset(valset, train_idx)
 
+    if normalize is True:
+        scaler = DatasetStandarsScaler()
+        scaler.fit(trainset)
+        trainset = scaler.transform(trainset)
+        valset = scaler.transform(valset)
+
     if torch.cuda.is_available():
         trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, pin_memory=True)
         valloader = torch.utils.data.DataLoader(valset, batch_size=batch_size, shuffle=False, pin_memory=True)
-
     else:
         trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, pin_memory=False)
         valloader = torch.utils.data.DataLoader(valset, batch_size=batch_size, shuffle=False, pin_memory=False)

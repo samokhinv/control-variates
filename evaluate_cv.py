@@ -87,18 +87,18 @@ def main(args):
     ncv_s = [SteinCV(psy_model, train_x, train_y, prior, len(train_dl.dataset), potential_grad=potential_grad) \
          for psy_model, prior, potential_grad in zip(psy_models, priors, potential_grads)]
 
-    x_batch = x_new[y_new == 1.0][[43]]
+    x_batch = x_new[y_new == 1.0][:100] 
 
-    for x in x_batch:
-        predictions_cv = []
-        predictions_no_cv = []
-        for models, ncv in tqdm(zip(trajectories, ncv_s)):
-            uq = ClassificationUncertaintyMCMC(models, ncv)
-            predictions_cv.append(uq.estimate_emperical_mean(x.unsqueeze(0), use_cv=True).mean().item())
-            predictions_no_cv.append(uq.estimate_emperical_mean(x.unsqueeze(0), use_cv=False).mean().item())
-        fig7, ax7 = plt.subplots()
-        ax7.boxplot([predictions_no_cv, predictions_cv])
-        plt.savefig(args.figure_path)
+    #for x in x_batch:
+    predictions_cv = []
+    predictions_no_cv = []
+    for models, ncv in tqdm(zip(trajectories, ncv_s)):
+        uq = ClassificationUncertaintyMCMC(models, ncv)
+        predictions_cv.append(uq.estimate_emperical_mean(x_batch, use_cv=True).mean().item())
+        predictions_no_cv.append(uq.estimate_emperical_mean(x_batch, use_cv=False).mean().item())
+    fig, ax = plt.subplots()
+    ax.boxplot([predictions_no_cv, predictions_cv])
+    plt.savefig(args.figure_path)
 
 
 if __name__ == "__main__":
