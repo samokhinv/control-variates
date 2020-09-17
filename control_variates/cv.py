@@ -26,7 +26,8 @@ def reshape_m_i(models_vec, image_vec):
 
 
 class SteinCV:
-    def __init__(self, psy_model, train_x, train_y, priors, N_train, potential_grad=None):
+    def __init__(self, psy_model, priors, potential_grad=None, 
+                train_x=None, train_y=None, N_train=None):
         self.psy_model = psy_model
         self.train_x = train_x
         self.train_y = train_y

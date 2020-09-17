@@ -42,6 +42,7 @@ def load_mnist_dataset(data_dir, batch_size, classes=None, normalize=True):
             valset = Subset(valset, train_idx)
 
     if normalize is True:
+        print('Normalizing...')
         scaler = DatasetStandarsScaler()
         scaler.fit(trainset)
         trainset = scaler.transform(trainset)

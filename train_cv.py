@@ -46,14 +46,73 @@ def parse_arguments():
     parser.add_argument('--data_dir', type=str, default='..data/mnist')
     parser.add_argument('--dataset', type=str, choices=['mnist', 'uci'], default='mnist')
     parser.add_argument('--centr_reg_coef', type=float, default=0)
+    parser.add_argument('--figure_path', type=str)
+    parser.add_argument('--max_sample_size', type=int, default=100)
+    parser.add_argument('--n_points', type=int, default=10)
 
     args = parser.parse_args()
     return args
 
 
+def get_cv(psy_input_dim, priors, args, 
+            train_x=None, train_y=None, N_train=None):
+    ncv_s = []
+    for prior in zip(priors):
+        if args.psy_type == 'const':
+            psy_model = PsyConstVector(input_dim=psy_input_dim)
+            psy_model.init_zero()
+        elif args.psy_type == 'linear':
+            psy_model = PsyLinear(input_dim=psy_input_dim)
+        elif args.psy_type == 'mlp':
+            psy_model = PsyMLP(input_dim=psy_input_dim, width=args.width, depth=args.depth)
+        psy_model.init_zero()
+        psy_model.to(args.device)
+
+        neural_control_variate = SteinCV(psy_model, prior, 
+                N_train=N_train, train_x=train_x, train_y=train_y)
+        ncv_s.append(neural_control_variate)
+    
+    return ncv_s
+
+
+def train_cv(trajectories, potential_grads, ncv_s, x, args):
+    def centr_regularizer(ncv, models, x, potential_grad=None):
+        return (ncv(models, x, potential_grad).mean(0))**2
+
+    for models, potential_grad, ncv in zip(trajectories, potential_grads, ncv_s):
+        psy_model = ncv.psy_model
+        ncv_optimizer = torch.optim.Adam(psy_model.parameters(), lr=args.cv_lr, weight_decay=0.0)
+        uncertainty_quant = ClassificationUncertaintyMCMC(models, ncv)
+        #train_x, train_y = next(iter(train_dl))
+
+        function_f = lambda model, x: get_binary_prediction(model, x, classes=[0, 1])
+        history = []
+        predictions_cv = []
+        predictions_no_cv = []
+
+        for _ in tqdm(range(args.n_cv_iter)):
+            ncv_optimizer.zero_grad()
+            mc_variance, no_cv_variance = compute_naive_variance(function_f, ncv, models, x, potential_grad)
+            history.append(mc_variance.mean().item())
+            loss = mc_variance.mean()
+            if args.centr_reg_coef != 0:
+                loss += args.centr_reg_coef * centr_regularizer(ncv, models, x, potential_grad).mean()
+            loss.backward()
+            ncv_optimizer.step()
+        print(f'Var with CV: {mc_variance.mean().item()}, Var w/o CV: {no_cv_variance.mean().item()}')
+        print(f'Mean value of CV: {ncv(models, x, potential_grad).mean()}')
+        
+        predictions_cv.append(uncertainty_quant.estimate_emperical_mean(x, use_cv=True).mean().item())
+        predictions_no_cv.append(uncertainty_quant.estimate_emperical_mean(x, use_cv=False).mean().item())
+    fig, ax = plt.subplots()
+    ax.boxplot([predictions_no_cv, predictions_cv])
+    plt.savefig(args.figure_path)
+        
+
 def main(args):
     random_seed(args.seed)
     device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
+    args.device = device
 
     if args.dataset == 'mnist':
         Path.mkdir(Path(args.data_dir), exist_ok=True, parents=True)
@@ -84,44 +143,16 @@ def main(args):
     if potential_grads is None:
         potential_grads = [compute_potential_grad(ms, train_x, train_y, N_train, priors=ps) for ms, ps in zip(trajectories, priors)]
     
-    def centr_regularizer(ncv, models, x, potential_grad=None):
-        return (ncv(models, x, potential_grad).mean(0))**2
+    every = len(trajectories[0]) // args.max_sample_size
+    trajectories = [x[::every][-args.max_sample_size:] for x in trajectories]
+    potential_grads = [x[::every][-args.max_sample_size:] for x in potential_grads]
 
-    x = (x_new[y_new == 1.0])[:100]
+    x = (x_new[y_new == 1.0])[:args.n_points]
 
-    ncv_s = []
     psy_input_dim = state_dict_to_vec(trajectories[0][0].state_dict()).shape[0]
-    for models, prior, potential_grad in zip(trajectories, priors, potential_grads):
-        if args.psy_type == 'const':
-            psy_model = PsyConstVector(input_dim=psy_input_dim)
-            psy_model.init_zero()
-        elif args.psy_type == 'linear':
-            psy_model = PsyLinear(input_dim=psy_input_dim)
-        elif args.psy_type == 'mlp':
-            psy_model = PsyMLP(input_dim=psy_input_dim, width=args.width, depth=args.depth)
-        psy_model.init_zero()
-        psy_model.to(device)
+    ncv_s = get_cv(psy_input_dim, priors, args)
+    train_cv(trajectories, potential_grads, ncv_s, x, args)
 
-        neural_control_variate = SteinCV(psy_model, train_x, train_y, prior, N_train)
-        ncv_optimizer = torch.optim.Adam(psy_model.parameters(), lr=args.cv_lr, weight_decay=0.0)
-        uncertainty_quant = ClassificationUncertaintyMCMC(models, neural_control_variate)
-        #train_x, train_y = next(iter(train_dl))
-
-        function_f = lambda model, x: get_binary_prediction(model, x, classes=[0, 1])
-        history = []
-
-        for _ in tqdm(range(args.n_cv_iter)):
-            ncv_optimizer.zero_grad()
-            mc_variance, no_cv_variance = compute_naive_variance(function_f, neural_control_variate, models, x, potential_grad)
-            history.append(mc_variance.mean().item())
-            loss = mc_variance.mean()
-            if args.centr_reg_coef != 0:
-                loss += args.centr_reg_coef * centr_regularizer(neural_control_variate, models, x, potential_grad).mean()
-            loss.backward()
-            ncv_optimizer.step()
-        ncv_s.append(neural_control_variate)
-        print(f'Var with CV: {mc_variance.mean().item()}, Var w/o CV: {no_cv_variance.mean().item()}')
-        print(f'Mean value of CV: {neural_control_variate(models, x, potential_grad).mean()}')
     psy_weights = [deepcopy(ncv.psy_model.state_dict()) for ncv in ncv_s]
     with Path(args.save_path).open('wb') as fp:
         pickle.dump(psy_weights, fp)

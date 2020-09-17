@@ -55,6 +55,8 @@ def parse_arguments():
     parser.add_argument('--data_dir', type=str)
     parser.add_argument('--dataset', type=str, choices=['mnist', 'uci'], default='mnist')
     parser.add_argument('--input_dim', type=int, default=784)
+    parser.add_argument('--not_normalize', action='store_true')
+
     args = parser.parse_args()
 
     return args
@@ -71,9 +73,11 @@ def main(args):
  
     if args.dataset == 'mnist':
         Path(args.data_dir).mkdir(exist_ok=True, parents=True)
-        trainloader, valloader = load_mnist_dataset(Path(args.data_dir), args.batch_size, classes=args.classes)
+        trainloader, valloader = load_mnist_dataset(Path(args.data_dir), 
+                args.batch_size, classes=args.classes, normalize=not args.not_normalize)
     elif args.dataset == 'uci':
-        trainloader, valloader = load_uci_dataset(Path(args.data_dir), args.batch_size)
+        trainloader, valloader = load_uci_dataset(Path(args.data_dir), 
+                args.batch_size, normalize=not args.not_normalize)
    
     def nll_func(y_hat, y):
         nll = F.cross_entropy(y_hat, y, reduction='sum')
