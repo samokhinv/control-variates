@@ -9,6 +9,7 @@ class DatasetStandarsScaler():
         self.biased = kwargs.get('biased', True)
         self.mean = kwargs.get('mean', 0)
         self.std = kwargs.get('std', 1)
+        self.eps = kwargs.get('eps', 1e-7)
 
     def fit(self, dataset):
         N = len(dataset)
@@ -24,7 +25,7 @@ class DatasetStandarsScaler():
     def transform(self, dataset):
         new_dataset = []
         for x, y in dataset:
-            new_dataset.append(((x - self.mean) / self.std, y))
+            new_dataset.append(((x - self.mean) / (self.std + self.eps), y))
         return new_dataset
 
 
