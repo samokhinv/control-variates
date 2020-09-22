@@ -11,6 +11,7 @@ from utils import load_samples
 from mnist_utils import load_mnist_dataset
 from UCI_utils import load_uci_dataset
 import control_variates
+from control_variates.spectral_variance import compute_spectral_variance
 from control_variates.model import LogRegression
 from control_variates.cv import PsyLinear, SteinCV, PsyConstVector, PsyMLP
 from control_variates.cv_utils import state_dict_to_vec, compute_naive_variance, compute_potential_grad
@@ -71,16 +72,21 @@ def train_cv(trajectories, ncv_s, x, args):
                 loss += args.centr_reg_coef * centr_regularizer(ncv, models, x).mean()
             loss.backward()
             ncv_optimizer.step()
-        print(f'Var with CV: {mc_variance.mean().item()}, Var w/o CV: {no_cv_variance.mean().item()}')
+        print(f'Sample Var with CV: {mc_variance.mean().item()}, w/o CV: {no_cv_variance.mean().item()}')
         print(f'Mean value of CV: {ncv(models, x).mean()}')
-        predictions_cv.append(uncertainty_quant.estimate_emperical_mean(x, use_cv=True).mean().item())
-        predictions_no_cv.append(uncertainty_quant.estimate_emperical_mean(x, use_cv=False).mean().item())
+        pred = np.array(uncertainty_quant.get_predictions(x).tolist())
+        pred_cv = pred - np.array(uncertainty_quant.get_cv_values(x).tolist())
+        print(f'Spectral Var with CV: {compute_spectral_variance(pred_cv)}, w/o CV {compute_spectral_variance(pred)}')
+
+        avg_predictions_cv.append(uncertainty_quant.estimate_emperical_mean(x, use_cv=True).mean().item())
+        avg_predictions_no_cv.append(uncertainty_quant.estimate_emperical_mean(x, use_cv=False).mean().item())
+
         fig, ax = plt.subplots()
         ax.plot(np.arange(len(history)), history)
         plt.savefig(f'{tr_id}.png')
     
     fig, ax = plt.subplots()
-    ax.boxplot([predictions_no_cv, predictions_cv])
+    ax.boxplot(x=['without CV', 'with CV'], y=[avg_predictions_no_cv, avg_predictions_cv])
     plt.savefig(args.figure_path)
 
 
@@ -105,6 +111,7 @@ def parse_arguments():
     parser.add_argument('--max_sample_size', type=int, default=100)
     parser.add_argument('--n_points', type=int, default=10)
     parser.add_argument('--not_normalize', action='store_true')
+    parser.add_argument('--cut_n_first', type=int, default=0)
 
     args = parser.parse_args()
     return args
@@ -117,12 +124,11 @@ def main(args):
 
     if args.dataset == 'mnist':
         Path.mkdir(Path(args.data_dir), exist_ok=True, parents=True)
-        if args.batch_size == -1:
-            args.batch_size = 20000
         train_dl, valid_dl = load_mnist_dataset(args.data_dir, args.batch_size, classes=[3, 5], normalize=not args.not_normalize)
     elif args.dataset == 'uci':
         train_dl, valid_dl = load_uci_dataset(args.data_dir, batch_size=args.batch_size, normalize=not args.not_normalize)
     N_train = len(train_dl.dataset)
+    print(f'Train dataset size: {N_train}')
 
     x, _ = train_dl.dataset[0]
     args.input_dim = 1
@@ -141,14 +147,15 @@ def main(args):
         args.samples_path,
         model_class=LogRegression, 
         model_kwargs={'input_size': args.input_dim})
+    
     if potential_grads is None:
         potential_grads = [compute_potential_grad(ms, train_x, train_y, N_train, priors=ps) for ms, ps in zip(trajectories, priors)]
     
-    every = len(trajectories[0]) // args.max_sample_size
-    trajectories = [x[::every][-args.max_sample_size:] for x in trajectories]
-    potential_grads = [x[::every][-args.max_sample_size:] for x in potential_grads]
+    every = len(trajectories[0] - args.cut_n_first) // args.max_sample_size
+    trajectories = [x[args.cut_n_first:][::every][-args.max_sample_size:] for x in trajectories]
+    potential_grads = [x[args.cut_n_first:][::every][-args.max_sample_size:] for x in potential_grads]
 
-    x = (x_new[y_new == 1.0])[[185]] #[:args.n_points]
+    x = (x_new[y_new == 1])[:args.n_points]
 
     psy_input_dim = state_dict_to_vec(trajectories[0][0].state_dict()).shape[0]
     ncv_s = get_cv(psy_input_dim, priors, potential_grads, args)

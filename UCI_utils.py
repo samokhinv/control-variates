@@ -39,11 +39,17 @@ def load_uci_dataset(data_dir, batch_size, classes=None, normalize=True):
         trainset = scaler.transform(trainset)
         valset = scaler.transform(valset)
 
-    if torch.cuda.is_available():
-        trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, pin_memory=True)
-        valloader = torch.utils.data.DataLoader(valset, batch_size=batch_size, shuffle=False, pin_memory=True)
+    if batch_size == -1:
+        train_batch_size = len(trainset)
+        val_batch_size = len(valset)
     else:
-        trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, pin_memory=False)
-        valloader = torch.utils.data.DataLoader(valset, batch_size=batch_size, shuffle=False, pin_memory=False)
+        train_batch_size = val_batch_size = batch_size
+        
+    if torch.cuda.is_available():
+        trainloader = torch.utils.data.DataLoader(trainset, batch_size=train_batch_size, shuffle=True, pin_memory=True)
+        valloader = torch.utils.data.DataLoader(valset, batch_size=val_batch_size, shuffle=False, pin_memory=True)
+    else:
+        trainloader = torch.utils.data.DataLoader(trainset, batch_size=train_batch_size, shuffle=True, pin_memory=False)
+        valloader = torch.utils.data.DataLoader(valset, batch_size=val_batch_size, shuffle=False, pin_memory=False)
 
     return trainloader, valloader

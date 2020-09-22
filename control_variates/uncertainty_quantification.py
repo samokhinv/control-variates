@@ -17,10 +17,7 @@ def _get_prediction(model, x):
 
 
 class ClassificationUncertaintyMCMC(object):
-    '''
-    SO FAR ONLY FOR ONE x
-    '''
-
+    
     def __init__(self, models, control_variate: SteinCV = None):
         self.models = models
         self.control_variate = control_variate
