@@ -64,7 +64,7 @@ def train_cv(trajectories, ncv_s, batches, args):
     mean_avg_pred = np.zeros(n_traj)
     mean_avg_pred_cv = np.zeros(n_traj)
 
-    metrics = {'sample_var': 0., 'samle_var_cv': 0, 'smple_var_reduction': 0., 
+    metrics = {'sample_var': 0., 'sample_var_cv': 0, 'sample_var_reduction': 0., 
     'spectral_var': 0., 'spectral_var_cv': 0., 'spectral_var_reduction': 0.}
 
     for x_id, x in tqdm(enumerate(batches)):
