@@ -55,11 +55,15 @@ def train_cv(trajectories, ncv_s, batches, args):
     def centr_regularizer(ncv, models, x, potential_grad=None):
         return (ncv(models, x, potential_grad).mean(0))**2
 
-    n_traj =len(trajectories)
+    n_traj = len(trajectories)
+    traj_size = len(trajectories[0])
     n_batches = len(batches)
     n_pts = len(batches[0])
 
-    fig_path = Path(args.figs_dir, f'{args.prefix_name}_{n_traj}traj_{n_batches}batch_{n_pts}pts.png')
+    Path(args.figs_dir).mkdir(exist_ok=True)
+    fig_path = Path(args.figs_dir, f'{args.prefix_name}_{n_traj}traj_{traj_size}size_{n_batches}batch_{n_pts}pts.png')
+    Path(args.metrics_dir).mkdir(exist_ok=True)
+    metrics_path = Path(args.metrics_dir, f'{args.prefix_name}_{n_traj}traj_{traj_size}size_{n_batches}batch_{n_pts}pts.json')
     
     mean_avg_pred = np.zeros(n_traj)
     mean_avg_pred_cv = np.zeros(n_traj)
@@ -116,7 +120,7 @@ def train_cv(trajectories, ncv_s, batches, args):
     plt.xticks([1,2], ['without CV', 'with CV'])
     plt.savefig(fig_path)
 
-    with Path(args.figs_dir, f'{args.prefix_name}_{args.prefix_name}_{n_traj}traj_{n_batches}batch_{n_pts}pts.json').open('w') as f:
+    with Path(metrics_path).open('w') as f:
         json.dump(metrics, f)
 
 
@@ -138,6 +142,7 @@ def parse_arguments():
     parser.add_argument('--dataset', type=str, choices=['mnist', 'uci'], default='mnist')
     parser.add_argument('--centr_reg_coef', type=float, default=0)
     parser.add_argument('--figs_dir', type=str)
+    parser.add_argument('--metrics_dir', type=str)
     parser.add_argument('--prefix_name', type=str)
     parser.add_argument('--max_sample_size', type=int, default=100)
     parser.add_argument('--n_points', type=int, default=10)
