@@ -12,13 +12,12 @@ from utils import load_samples
 from mnist_utils import load_mnist_dataset
 from UCI_utils import load_uci_dataset
 import control_variates
-from control_variates.spectral_variance import compute_spectral_variance
+from control_variates.cv_utils import SampleVarianceEstimator, SpectralVarianceEstimator
 from control_variates.model import LogRegression
 from control_variates.cv import PsyLinear, SteinCV, PsyConstVector, PsyMLP
 from control_variates.cv_utils import state_dict_to_vec, compute_naive_variance, compute_potential_grad
 from control_variates.model import get_binary_prediction
 from control_variates.uncertainty_quantification import ClassificationUncertaintyMCMC
-from control_variates.cv_utils import trapezoidal_kernel, SpectralVariance
 from control_variates.cv_utils import compute_log_likelihood, compute_concat_gradient
 
 import random
@@ -80,27 +79,45 @@ def train_cv(trajectories, ncv_s, batches, args):
             uncertainty_quant = ClassificationUncertaintyMCMC(models, ncv)
 
             function_f = lambda model, x: get_binary_prediction(model, x, classes=[0, 1])
+
+            sample_var_estimator = SampleVarianceEstimator(function_f, models)
+            spectral_var_estimator = SpectralVarianceEstimator(function_f, models)
+
+            if args.var_estimator == 'sample':
+                var_estimator = sample_var_estimator
+            else:
+                var_estimator = spectral_var_estimator
+
             history = []
             for _ in range(args.n_cv_iter):
                 ncv_optimizer.zero_grad()
-                mc_variance, no_cv_variance = compute_naive_variance(function_f, ncv, models, x)
-                history.append(mc_variance.mean().item())
-                loss = mc_variance.mean()
+
+                pred = function_f(models, x)
+                cv_vals = ncv(models, x)
+                var_cv = sample_var_estimator.estimate_variance(x, use_cv=True, all_values=(pred - cv_vals))
+                var = sample_var_estimator.estimate_variance(x, use_cv=False, all_values=pred)
+
+                history.append(var_cv.mean().item())
+                loss = var_cv.mean()
                 if args.centr_reg_coef != 0:
                     loss += args.centr_reg_coef * centr_regularizer(ncv, models, x).mean()
                 loss.backward()
                 ncv_optimizer.step()
-            pred = np.array(uncertainty_quant.get_predictions(x).tolist())
-            pred_cv = pred - np.array(uncertainty_quant.get_cv_values(x).tolist())
-            spectral_var = compute_spectral_variance(pred)
-            spectral_var_cv = compute_spectral_variance(pred_cv)
+            pred = function_f(models, x)
+            cv_vals = ncv(models, x)
 
-            metrics['sample_var'] += no_cv_variance.mean().item() / (n_batches * n_traj)
-            metrics['sample_var_cv'] += mc_variance.mean().item() / (n_batches * n_traj)
-            metrics['sample_var_reduction'] += (no_cv_variance / mc_variance).mean().item() / (n_batches * n_traj)
-            metrics['spectral_var'] += spectral_var.mean() / (n_batches * n_traj)
-            metrics['spectral_var_cv'] += spectral_var_cv.mean() / (n_batches * n_traj)
-            metrics['spectral_var_reduction'] += (spectral_var / spectral_var_cv).mean() / (n_batches * n_traj)
+            sample_var_cv = sample_var_estimator.estimate_variance(x, use_cv=True, all_values=(pred - cv_vals))
+            sample_var = sample_var_estimator.estimate_variance(x, use_cv=False, all_values=pred)
+            
+            spectral_var_cv = spectral_var_estimator.estimate_variance(x, use_cv=True, all_values=(pred - cv_vals))
+            spectral_var = spectral_var_estimator.estimate_variance(x, use_cv=True, all_values=pred)
+
+            metrics['sample_var'] += sample_var.mean().item() / (n_batches * n_traj)
+            metrics['sample_var_cv'] += sample_var_cv.mean().item() / (n_batches * n_traj)
+            metrics['sample_var_reduction'] += (sample_var / sample_var_cv).mean().item() / (n_batches * n_traj)
+            metrics['spectral_var'] += spectral_var.mean().item() / (n_batches * n_traj)
+            metrics['spectral_var_cv'] += spectral_var_cv.mean().item() / (n_batches * n_traj)
+            metrics['spectral_var_reduction'] += (spectral_var / spectral_var_cv).mean().item() / (n_batches * n_traj)
 
             #print(f'Sample Var with CV: {mc_variance.mean().item()}, w/o CV: {no_cv_variance.mean().item()}')
             #print(f'Mean value of CV: {ncv(models, x).mean()}')
@@ -150,6 +167,7 @@ def parse_arguments():
     parser.add_argument('--cut_n_first', type=int, default=0)
     parser.add_argument('--sample_points', action='store_true')
     parser.add_argument('--n_batches', type=int, default=1)
+    parser.add_argument('--var_estimator', type=str, choices=['sample', 'spectral'], default='sample')
 
     args = parser.parse_args()
     return args
