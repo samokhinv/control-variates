@@ -16,6 +16,21 @@ from typing import List, Callable
 from .uncertainty_quantification import ClassificationUncertaintyMCMC
 
 
+class BurnInScheduler(object):
+    def __init__(self, optimizer, burn_in_epochs, burn_lr, rest_lr, **kwargs):
+        self.optimizer = optimizer
+        self.burn_in_epochs = burn_in_epochs
+        self.burn_lr = burn_lr
+        self.rest_lr = rest_lr
+        self.passed = False
+
+    def step(self, epoch):
+        if self.passed is False and epoch >= self.burn_in_epochs:
+            for param_group in self.optimizer.param_groups:
+                param_group['lr'] = self.rest_lr
+            self.passed = True
+            
+
 class BNNTrainer(object):
     def __init__(self, model, optimizer, nll_func, err_func, trainloader, valloader, **kwargs):
         self.model = model
@@ -25,6 +40,7 @@ class BNNTrainer(object):
         self.trainloader = trainloader
         self.valloader = valloader
 
+        self.scheduler = kwargs.get('scheduler', None)
         self.resample_prior_every = kwargs.get('resample_prior_every', 100)
         self.resample_momentum_every = kwargs.get('resample_momentum_every', 50)
         device = kwargs.get('device', 'cuda:0' if cuda.is_available() else 'cpu')
@@ -64,6 +80,7 @@ class BNNTrainer(object):
                 (epoch < resample_prior_until) and (epoch < burn_in_epochs)
                 loss, err = self.do_train_step(x.to(self.device), y.to(self.device), 
                     resample_prior=resample_prior, resample_momentum=resample_momentum)
+                self.scheduler.step(epoch)
                 train_loss += loss
                 train_err += err
                 n_ex += x.shape[0]

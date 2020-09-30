@@ -2,7 +2,7 @@ from control_variates.model import MLP
 from control_variates.optim import  SGLD, ScaleAdaSGHMC as H_SA_SGHMC
 from mnist_utils import load_mnist_dataset
 from UCI_utils import load_uci_dataset
-from control_variates.trainer import BNNTrainer
+from control_variates.trainer import BNNTrainer, BurnInScheduler
 from control_variates.cv_utils import compute_potential_grad
 import torch
 from torch.nn import functional as F
@@ -56,6 +56,7 @@ def parse_arguments():
     parser.add_argument('--dataset', type=str, choices=['mnist', 'uci'], default='mnist')
     parser.add_argument('--input_dim', type=int, default=784)
     parser.add_argument('--not_normalize', action='store_true')
+    parser.add_argument('--burn_lr', type=float, default=1e-5)
 
     args = parser.parse_args()
 
@@ -107,14 +108,16 @@ def main(args):
         model = init_model(initial_state_dict)
         #random_seed(seed)
         
-        optimizer = mcmc_class(model.parameters(), lr=args.bnn_lr, alpha0=args.alpha0, beta0=args.beta0)
+        optimizer = mcmc_class(model.parameters(), lr=args.burn_lr, alpha0=args.alpha0, beta0=args.beta0)
+        scheduler = BurnInScheduler(optimizer, args.burn_in_epochs, args.burn_lr, args.bnn_lr)
 
         trainer = BNNTrainer(model, 
             optimizer, 
             nll_func, 
             err_func, 
             trainloader, 
-            valloader, 
+            valloader,
+            scheduler=scheduler, 
             device=device, 
             resample_prior_every=args.resample_prior_every,
             resample_momentum_every=args.resample_momentum_every,

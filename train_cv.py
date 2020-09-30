@@ -94,8 +94,8 @@ def train_cv(trajectories, ncv_s, batches, args):
 
                 pred = function_f(models, x)
                 cv_vals = ncv(models, x)
-                var_cv = sample_var_estimator.estimate_variance(x, use_cv=True, all_values=(pred - cv_vals))
-                var = sample_var_estimator.estimate_variance(x, use_cv=False, all_values=pred)
+                var_cv = var_estimator.estimate_variance(x, use_cv=True, all_values=(pred - cv_vals))
+                var = var_estimator.estimate_variance(x, use_cv=False, all_values=pred)
 
                 history.append(var_cv.mean().item())
                 loss = var_cv.mean()
@@ -211,7 +211,8 @@ def main(args):
     trajectories = [x[args.cut_n_first:][::every][-args.max_sample_size:] for x in trajectories]
     potential_grads = [x[args.cut_n_first:][::every][-args.max_sample_size:] for x in potential_grads]
 
-    x1 = (x_new[y_new == 1])
+    class_ = 1 if (y_new == 1).sum() > y_new.shape[0] / 2 else 0
+    x1 = (x_new[y_new == class_])
     batches = []
     randperm = torch.randperm(x1.shape[0])
     for idx in range(0, min(x1.shape[0], args.n_batches*args.n_points), args.n_points):
