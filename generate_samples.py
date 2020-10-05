@@ -55,7 +55,8 @@ def parse_arguments():
     parser.add_argument('--dataset', type=str, choices=['mnist', 'uci'], default='mnist')
     parser.add_argument('--input_dim', type=int, default=784)
     parser.add_argument('--not_normalize', action='store_true')
-    parser.add_argument('--burn_lr', type=float, default=1e-5)
+    parser.add_argument('--burn_lr', type=float, default=None)
+    parser.add_argument('--max_sample_size', type=int, default=float('inf'))
 
     args = parser.parse_args()
 
@@ -103,6 +104,8 @@ def main(args):
     for _ in tqdm(range(args.n_samples)):
         model = init_model(initial_state_dict)
         
+        if args.burn_lr is None:
+            args.burn_lr = args.bnn_lr
         optimizer = mcmc_class(model.parameters(), lr=args.burn_lr, alpha0=args.alpha0, beta0=args.beta0)
         scheduler = BurnInScheduler(optimizer, args.burn_in_epochs, args.burn_lr, args.bnn_lr)
 
@@ -117,6 +120,7 @@ def main(args):
             resample_prior_every=args.resample_prior_every,
             resample_momentum_every=args.resample_momentum_every,
             save_freq=args.save_freq,
+            max_weight_set_size=args.max_sample_size,
             batch_size=args.batch_size,
             report_every=args.report_every
             )

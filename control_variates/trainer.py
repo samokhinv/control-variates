@@ -57,12 +57,18 @@ class BNNTrainer(object):
         self.potential_grad_sample = []
         self.potential_sample = []
         
-        self.early_stopping = kwargs.get('early_stopping', False)
-        if self.early_stopping:
-            self.min_delta = kwargs.get('min_delta', 1e-3)
-            self.wait = kwargs.get('wait', 10)
+        # self.early_stopping = kwargs.get('early_stopping', False)
+        # if self.early_stopping:
+        #     self.min_delta = kwargs.get('min_delta', 1e-3)
+        #     self.wait = kwargs.get('wait', 10)
 
     def train(self, n_epoch, burn_in_epochs=0, resample_prior_until=1):
+        total_steps = n_epoch * len(self.trainloader)
+        burn_in_steps = burn_in_epochs * len(self.trainloader)
+        if self.max_weight_set_size is not float('inf'):
+            start_save_step = total_steps - self.max_weight_set_size * self.save_freq
+        else:
+            start_save_step = burn_in_steps
         #best_loss = 1e9
         #no_significant_improvement_step = 0
         self.model.to(self.device)
@@ -85,7 +91,7 @@ class BNNTrainer(object):
                 n_ex += x.shape[0]
                 it_cnt += 1
 
-                if epoch > burn_in_epochs and it_cnt % self.save_freq == 0:
+                if epoch > burn_in_epochs and it_cnt % self.save_freq == 0 and it_cnt >= start_save_step:
                     self.save_sampled_net()
 
             if epoch % self.report_every == 0:
@@ -98,7 +104,7 @@ class BNNTrainer(object):
                         val_err += self.err_func(y_hat, y).sum().item()
                         val_loss += self.nll_func(y_hat, y)
                         n_ex += x.shape[0]
-                if epoch <= burn_in_epochs:
+                if it_cnt <= start_save_step + 1:
                     potential = self.compute_potential()
                     self.optimizer.zero_grad()
                     potential.backward()

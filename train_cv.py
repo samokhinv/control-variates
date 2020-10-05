@@ -215,8 +215,8 @@ def main(args):
         args.keep_n_last = min(args.keep_n_last, len(trajectories[0]))
         args.max_sample_size = min(args.max_sample_size, args.keep_n_last)
         every = (args.keep_n_last) // args.max_sample_size
-        trajectories = [x[-args.keep_n_last][::every][-args.max_sample_size:] for x in trajectories]
-        potential_grads = [x[-args.keep_n_last][::every][-args.max_sample_size:] for x in potential_grads]
+        trajectories = [x[-args.keep_n_last:][::every][-args.max_sample_size:] for x in trajectories]
+        potential_grads = [x[-args.keep_n_last:][::every][-args.max_sample_size:] for x in potential_grads]
     else:
         every = (len(trajectories[0]) - args.cut_n_first) // args.max_sample_size
         trajectories = [x[args.cut_n_first:][::every][-args.max_sample_size:] for x in trajectories]
