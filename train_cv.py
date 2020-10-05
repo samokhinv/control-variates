@@ -1,4 +1,5 @@
 from matplotlib import pyplot as plt
+import seaborn as sns
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -7,6 +8,7 @@ from copy import deepcopy
 import argparse
 from pathlib import Path
 import json
+import random
 
 from utils import load_samples
 from mnist_utils import load_mnist_dataset
@@ -19,8 +21,6 @@ from control_variates.cv_utils import state_dict_to_vec, compute_naive_variance,
 from control_variates.model import get_binary_prediction
 from control_variates.uncertainty_quantification import ClassificationUncertaintyMCMC
 from control_variates.cv_utils import compute_log_likelihood, compute_concat_gradient
-
-import random
 
 
 def random_seed(seed):
@@ -60,9 +60,9 @@ def train_cv(trajectories, ncv_s, batches, args):
     n_pts = len(batches[0])
 
     Path(args.figs_dir).mkdir(exist_ok=True)
-    fig_path = Path(args.figs_dir, f'{args.prefix_name}_{n_traj}traj_{traj_size}size_{n_batches}batch_{n_pts}pts.png')
+    fig_path = Path(args.figs_dir, f'{args.prefix_name}_{n_traj}traj_{args.psy_type}_psy_{traj_size}size_{n_batches}batch_{n_pts}pts.png')
     Path(args.metrics_dir).mkdir(exist_ok=True)
-    metrics_path = Path(args.metrics_dir, f'{args.prefix_name}_{n_traj}traj_{traj_size}size_{n_batches}batch_{n_pts}pts.json')
+    metrics_path = Path(args.metrics_dir, f'{args.prefix_name}_{n_traj}traj_{args.psy_type}_psy_{traj_size}size_{n_batches}batch_{n_pts}pts.json')
     
     mean_avg_pred = np.zeros(n_traj)
     mean_avg_pred_cv = np.zeros(n_traj)
@@ -94,8 +94,12 @@ def train_cv(trajectories, ncv_s, batches, args):
 
                 pred = function_f(models, x)
                 cv_vals = ncv(models, x)
+                if args.predictive_distribution is True:
+                    pred = pred.mean(-1)
+                    cv_vals = cv_vals.mean(-1)
+
                 var_cv = var_estimator.estimate_variance(x, use_cv=True, all_values=(pred - cv_vals))
-                var = var_estimator.estimate_variance(x, use_cv=False, all_values=pred)
+                #var = var_estimator.estimate_variance(x, use_cv=False, all_values=pred)
 
                 history.append(var_cv.mean().item())
                 loss = var_cv.mean()
@@ -105,6 +109,9 @@ def train_cv(trajectories, ncv_s, batches, args):
                 ncv_optimizer.step()
             pred = function_f(models, x)
             cv_vals = ncv(models, x)
+            if args.predictive_distribution is True:
+                pred = pred.mean(-1)
+                cv_vals = cv_vals.mean(-1)
 
             sample_var_cv = sample_var_estimator.estimate_variance(x, use_cv=True, all_values=(pred - cv_vals))
             sample_var = sample_var_estimator.estimate_variance(x, use_cv=False, all_values=pred)
@@ -119,10 +126,6 @@ def train_cv(trajectories, ncv_s, batches, args):
             metrics['spectral_var_cv'] += spectral_var_cv.mean().item() / (n_batches * n_traj)
             metrics['spectral_var_reduction'] += (spectral_var / spectral_var_cv).mean().item() / (n_batches * n_traj)
 
-            #print(f'Sample Var with CV: {mc_variance.mean().item()}, w/o CV: {no_cv_variance.mean().item()}')
-            #print(f'Mean value of CV: {ncv(models, x).mean()}')
-            #print(f'Spectral Var with CV: {compute_spectral_variance(pred_cv)}, w/o CV {compute_spectral_variance(pred)}')
-
             avg_predictions_cv.append(uncertainty_quant.estimate_emperical_mean(x, use_cv=True).mean().item())
             avg_predictions_no_cv.append(uncertainty_quant.estimate_emperical_mean(x, use_cv=False).mean().item())
 
@@ -130,11 +133,11 @@ def train_cv(trajectories, ncv_s, batches, args):
                 _, ax = plt.subplots()
                 ax.plot(np.arange(len(history)), history)
                 plt.savefig(f'{tr_id}.png')
-        mean_avg_pred += np.array(avg_predictions_no_cv) / n_traj
-        mean_avg_pred_cv += np.array(avg_predictions_cv) / n_traj
+        mean_avg_pred += np.array(avg_predictions_no_cv) / n_batches
+        mean_avg_pred_cv += np.array(avg_predictions_cv) / n_batches
     _, ax = plt.subplots()
-    ax.boxplot([mean_avg_pred, mean_avg_pred_cv])
-    plt.xticks([1,2], ['without CV', 'with CV'])
+    sns.boxplot(data=[mean_avg_pred, mean_avg_pred_cv])
+    plt.xticks([0,1], ['without CV', 'with CV'])
     plt.savefig(fig_path)
 
     with Path(metrics_path).open('w') as f:
@@ -168,6 +171,7 @@ def parse_arguments():
     parser.add_argument('--sample_points', action='store_true')
     parser.add_argument('--n_batches', type=int, default=1)
     parser.add_argument('--var_estimator', type=str, choices=['sample', 'spectral'], default='sample')
+    parser.add_argument('--predictive_distribution', action='store_true')
 
     args = parser.parse_args()
     return args
