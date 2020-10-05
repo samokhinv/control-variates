@@ -2,7 +2,7 @@ from matplotlib import pyplot as plt
 import seaborn as sns
 import numpy as np
 import torch
-from tqdm import tqdm
+from tqdm import tqdm, trange
 import pickle
 from copy import deepcopy
 import argparse
@@ -73,7 +73,7 @@ def train_cv(trajectories, ncv_s, batches, args):
     for x_id, x in tqdm(enumerate(batches)):
         avg_predictions_cv = []
         avg_predictions_no_cv = []
-        for tr_id, (models, ncv) in enumerate(zip(trajectories, ncv_s)):
+        for tr_id, (models, ncv) in tqdm(enumerate(zip(trajectories, ncv_s)), leave=False):
             psy_model = ncv.psy_model
             ncv_optimizer = torch.optim.Adam(psy_model.parameters(), lr=args.cv_lr, weight_decay=0.0)
             uncertainty_quant = ClassificationUncertaintyMCMC(models, ncv)
@@ -89,7 +89,7 @@ def train_cv(trajectories, ncv_s, batches, args):
                 var_estimator = spectral_var_estimator
 
             history = []
-            for _ in range(args.n_cv_iter):
+            for _ in trange(args.n_cv_iter, leave=False):
                 ncv_optimizer.zero_grad()
 
                 pred = function_f(models, x)
@@ -99,7 +99,6 @@ def train_cv(trajectories, ncv_s, batches, args):
                     cv_vals = cv_vals.mean(-1)
 
                 var_cv = var_estimator.estimate_variance(x, use_cv=True, all_values=(pred - cv_vals))
-                #var = var_estimator.estimate_variance(x, use_cv=False, all_values=pred)
 
                 history.append(var_cv.mean().item())
                 loss = var_cv.mean()
@@ -129,7 +128,7 @@ def train_cv(trajectories, ncv_s, batches, args):
             avg_predictions_cv.append(uncertainty_quant.estimate_emperical_mean(x, use_cv=True).mean().item())
             avg_predictions_no_cv.append(uncertainty_quant.estimate_emperical_mean(x, use_cv=False).mean().item())
 
-            if x_id == 0:
+            if x_id == 0 and tr_id < 10:
                 _, ax = plt.subplots()
                 ax.plot(np.arange(len(history)), history)
                 plt.savefig(f'{tr_id}.png')
@@ -172,6 +171,7 @@ def parse_arguments():
     parser.add_argument('--n_batches', type=int, default=1)
     parser.add_argument('--var_estimator', type=str, choices=['sample', 'spectral'], default='sample')
     parser.add_argument('--predictive_distribution', action='store_true')
+    parser.add_argument('--keep_n_last', type=int)
 
     args = parser.parse_args()
     return args
@@ -211,12 +211,19 @@ def main(args):
     if potential_grads is None:
         potential_grads = [compute_potential_grad(ms, train_x, train_y, N_train, priors=ps) for ms, ps in zip(trajectories, priors)]
     
-    every = (len(trajectories[0]) - args.cut_n_first) // args.max_sample_size
-    trajectories = [x[args.cut_n_first:][::every][-args.max_sample_size:] for x in trajectories]
-    potential_grads = [x[args.cut_n_first:][::every][-args.max_sample_size:] for x in potential_grads]
+    if args.keep_n_last is not None:
+        args.keep_n_last = min(args.keep_n_last, len(trajectories[0]))
+        args.max_sample_size = min(args.max_sample_size, args.keep_n_last)
+        every = (args.keep_n_last) // args.max_sample_size
+        trajectories = [x[-args.keep_n_last][::every][-args.max_sample_size:] for x in trajectories]
+        potential_grads = [x[-args.keep_n_last][::every][-args.max_sample_size:] for x in potential_grads]
+    else:
+        every = (len(trajectories[0]) - args.cut_n_first) // args.max_sample_size
+        trajectories = [x[args.cut_n_first:-args.keep_n_last][::every][-args.max_sample_size:] for x in trajectories]
+        potential_grads = [x[args.cut_n_first:][::every][-args.max_sample_size:] for x in potential_grads]
 
-    class_ = 1 if (y_new == 1).sum() > y_new.shape[0] / 2 else 0
-    x1 = (x_new[y_new == class_])
+    #class_ = 1 if (y_new == 1).sum() > y_new.shape[0] / 2 else 0
+    x1 = x_new #(x_new[y_new == class_])
     batches = []
     randperm = torch.randperm(x1.shape[0])
     for idx in range(0, min(x1.shape[0], args.n_batches*args.n_points), args.n_points):
