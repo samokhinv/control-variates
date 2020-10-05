@@ -1,24 +1,23 @@
+import torch
+from torch.nn import functional as F
+import numpy as np
+import dill as pickle
+from pathlib import Path
+from functools import partial
+from easydict import EasyDict as edict
+import random
+from matplotlib import pyplot as plt
+import numpy as np
+from tqdm import tqdm
+import argparse
+
 from control_variates.model import MLP
 from control_variates.optim import  SGLD, ScaleAdaSGHMC as H_SA_SGHMC
 from mnist_utils import load_mnist_dataset
 from UCI_utils import load_uci_dataset
 from control_variates.trainer import BNNTrainer, BurnInScheduler
 from control_variates.cv_utils import compute_potential_grad
-import torch
-from torch.nn import functional as F
 from control_variates.model import LogRegression
-
-import numpy as np
-import dill as pickle
-from pathlib import Path
-from functools import partial
-from easydict import EasyDict as edict
-
-import random
-from matplotlib import pyplot as plt
-import numpy as np
-from tqdm import tqdm
-import argparse
 
 
 mcmc_grdadients = {'sgld': SGLD, 'sghmc': H_SA_SGHMC}
@@ -68,7 +67,6 @@ def main(args):
         random_seed(args.seed)
     else:
         args.seed = -1
-    #init_seed = random.randint(0, 100500)
 
     device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
  
@@ -102,11 +100,8 @@ def main(args):
 
     initial_state_dict = init_model().state_dict()
 
-    for _ in range(args.n_samples):
-        #seed = random.randint(0, 100500)
-        #torch.manual_seed(init_seed)
+    for _ in tqdm(range(args.n_samples)):
         model = init_model(initial_state_dict)
-        #random_seed(seed)
         
         optimizer = mcmc_class(model.parameters(), lr=args.burn_lr, alpha0=args.alpha0, beta0=args.beta0)
         scheduler = BurnInScheduler(optimizer, args.burn_in_epochs, args.burn_lr, args.bnn_lr)

@@ -1,7 +1,6 @@
 import copy
 import numpy as np
 import logging
-
 import torch
 from torch import cuda
 
@@ -64,8 +63,8 @@ class BNNTrainer(object):
             self.wait = kwargs.get('wait', 10)
 
     def train(self, n_epoch, burn_in_epochs=0, resample_prior_until=1):
-        best_loss = 1e9
-        no_significant_improvement_step = 0
+        #best_loss = 1e9
+        #no_significant_improvement_step = 0
         self.model.to(self.device)
         it_cnt = 0
         for epoch in range(n_epoch):
@@ -88,35 +87,38 @@ class BNNTrainer(object):
 
                 if epoch > burn_in_epochs and it_cnt % self.save_freq == 0:
                     self.save_sampled_net()
-        
-            n_ex = 0
-            self.model.eval()
-            for x, y in self.valloader:
-                with torch.no_grad():
-                    x, y = x.to(self.device), y.to(self.device)
-                    y_hat = self.model(x)
-                    val_err += self.err_func(y_hat, y).sum().item()
-                    val_loss += self.nll_func(y_hat, y)
-                    n_ex += x.shape[0]
 
             if epoch % self.report_every == 0:
-                potential = self.compute_potential()
-                self.optimizer.zero_grad()
-                potential.backward()
-                grad = self.get_potential_grad(add_prior_grad=False)
+                n_ex = 0
+                self.model.eval()
+                for x, y in self.valloader:
+                    with torch.no_grad():
+                        x, y = x.to(self.device), y.to(self.device)
+                        y_hat = self.model(x)
+                        val_err += self.err_func(y_hat, y).sum().item()
+                        val_loss += self.nll_func(y_hat, y)
+                        n_ex += x.shape[0]
+                if epoch <= burn_in_epochs:
+                    potential = self.compute_potential()
+                    self.optimizer.zero_grad()
+                    potential.backward()
+                    grad = self.get_potential_grad(add_prior_grad=True)[:10] #False)
+                else:
+                    potential = self.potential_sample[-1]
+                    grad = self.potential_grad_sample[-1][:10]
 
                 logger.info(f'Epoch {epoch} finished. Val loss {val_loss / n_ex}, Val error {val_err / n_ex}')
                 logger.info(f'Potential: {potential}')
                 logger.info(f'Potential grad: {grad}')
-            if self.early_stopping:
-                if val_loss / n_ex - best_loss < -self.min_delta:
-                    best_loss = val_loss / n_ex
-                else:
-                    no_significant_improvement_step += 1
+            # if self.early_stopping:
+            #     if val_loss / n_ex - best_loss < -self.min_delta:
+            #         best_loss = val_loss / n_ex
+            #     else:
+            #         no_significant_improvement_step += 1
 
-                if no_significant_improvement_step >= self.wait:
-                    logger.info('Early Stopping triggered')
-                    break
+            #     if no_significant_improvement_step >= self.wait:
+            #         logger.info('Early Stopping triggered')
+            #         break
 
     def do_train_step(self, x, y, **kwargs):
         y_hat = self.model(x)
@@ -126,10 +128,10 @@ class BNNTrainer(object):
         nll.backward()
         if isinstance(self.optimizer, BaseOptimizer):
             out = self.optimizer.step(**kwargs)
-            grad = out[1].detach().numpy()
+            #grad = out[1].detach().numpy()
         else:
             self.optimizer.step()
-            grad = self.get_potential_grad().detach().numpy()
+            #grad = self.get_potential_grad().detach().numpy()
         
         err = self.err_func(y_hat, y).sum().item()
 
@@ -140,20 +142,10 @@ class BNNTrainer(object):
 
     def get_weight_sample(self, Nsample=0):
         """return weight sample from posterior in a single-column array"""
-        weight_vec = []
+        #weight_vec = []
 
         if Nsample == 0 or Nsample > len(self.weight_set_sample):
             Nsample = len(self.weight_set_sample)
-
-        # for idx, state_dict in enumerate(self.weight_set_sample):
-        #     if idx == Nsample:
-        #         break
-
-        #     for key in state_dict.keys():
-                # if 'weight' in key:
-                #     weight_mtx = state_dict[key].cpu().data
-                #     for weight in weight_mtx.view(-1):
-                #         weight_vec.append(weight)
 
         return self.weight_set_sample
 
@@ -166,9 +158,10 @@ class BNNTrainer(object):
         potential = self.compute_potential()
         self.optimizer.zero_grad()
         potential.backward()
-        grad = self.get_potential_grad(add_prior_grad=False)
+        grad = self.get_potential_grad(add_prior_grad=True) #False)
         self.potential_sample.append(potential)
         self.potential_grad_sample.append(grad.detach().numpy())
+
 
     def compute_potential(self):
         potential = 0
@@ -209,63 +202,3 @@ class BNNTrainer(object):
 
                 flat_grad.append(d_p.flatten())
         return torch.cat(flat_grad, dim=0)
-
-
-class NCVTrainer(object):
-    def __init__(self,
-                 ncv: SteinCV,
-                 models: List[Callable],
-                 var_criterion: Callable[[torch.Tensor], torch.Tensor],
-                 valid_criterion: Callable[[torch.Tensor], torch.Tensor],
-                 x_batch,
-                 optimizer,
-                 trainloader,
-                 valloader,
-                 **kwargs):
-        self.ncv = ncv
-        self.models = models
-        self.x_batch = x_batch
-        self.optimizer = optimizer
-        self.trainloader = trainloader
-        self.valloader = valloader
-
-        self.var_criterion = var_criterion
-        self.valid_criterion = valid_criterion
-        self.report_every = kwargs.get('report_every', 10)
-        self.early_stopping = kwargs.get('early_stopping', False)
-        if self.early_stopping:
-            self.min_delta = kwargs.get('min_delta', 1e-3)
-            self.wait = kwargs.get('wait', 10)
-
-    def train(self, x, n_epochs):
-        best_loss = 1e9
-        no_significant_improvement_step = 0
-        for epoch in range(n_epochs):
-            val_loss = []
-            self.ncv.psy_model.train()
-            for x, _ in self.trainloader:
-                x.to(self.device)
-                self.optimizer.zero_grad()
-                mc_variance = self.var_criterion(x)
-                mc_variance.backward()
-                self.optimizer.step()
-
-            self.ncv.psy_model.eval()
-            for x, _ in self.valloader:
-                x.to(self.device)
-                with torch.no_grad():
-                    val_loss.append(self.valid_criterion(x).mean().item())
-
-            val_loss = np.mean(val_loss)
-
-            if epoch % self.report_every == 0:
-                logger.info(f'Epoch {epoch} finished. Val loss {val_loss}')
-            if self.early_stopping:
-                if val_loss - best_loss < -self.min_delta:
-                    best_loss = val_loss
-                else:
-                    no_significant_improvement_step += 1
-
-                if no_significant_improvement_step >= self.wait:
-                    logger.info('Early Stopping triggered')
-                    break
