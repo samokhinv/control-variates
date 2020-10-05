@@ -73,7 +73,7 @@ def train_cv(trajectories, ncv_s, batches, args):
     for x_id, x in tqdm(enumerate(batches)):
         avg_predictions_cv = []
         avg_predictions_no_cv = []
-        for tr_id, (models, ncv) in tqdm(enumerate(zip(trajectories, ncv_s)), leave=False):
+        for tr_id, (models, ncv) in enumerate(zip(trajectories, ncv_s)):
             psy_model = ncv.psy_model
             ncv_optimizer = torch.optim.Adam(psy_model.parameters(), lr=args.cv_lr, weight_decay=0.0)
             uncertainty_quant = ClassificationUncertaintyMCMC(models, ncv)
@@ -89,7 +89,7 @@ def train_cv(trajectories, ncv_s, batches, args):
                 var_estimator = spectral_var_estimator
 
             history = []
-            for _ in trange(args.n_cv_iter, leave=False):
+            for _ in range(args.n_cv_iter):
                 ncv_optimizer.zero_grad()
 
                 pred = function_f(models, x)
@@ -219,7 +219,7 @@ def main(args):
         potential_grads = [x[-args.keep_n_last][::every][-args.max_sample_size:] for x in potential_grads]
     else:
         every = (len(trajectories[0]) - args.cut_n_first) // args.max_sample_size
-        trajectories = [x[args.cut_n_first:-args.keep_n_last][::every][-args.max_sample_size:] for x in trajectories]
+        trajectories = [x[args.cut_n_first:][::every][-args.max_sample_size:] for x in trajectories]
         potential_grads = [x[args.cut_n_first:][::every][-args.max_sample_size:] for x in potential_grads]
 
     #class_ = 1 if (y_new == 1).sum() > y_new.shape[0] / 2 else 0
