@@ -185,7 +185,7 @@ class BNNTrainer(object):
                     weight_decay = state['weight_decay']
                 except:
                     weight_decay = group['weight_decay']
-                potential += weight_decay / 2 * p**2.sum()
+                potential += weight_decay / 2 * (p**2).sum()
         return potential
  
     def get_potential_grad(self, add_prior_grad=False):
