@@ -108,7 +108,7 @@ class BNNTrainer(object):
                     potential = self.compute_potential()
                     self.optimizer.zero_grad()
                     potential.backward()
-                    grad = self.get_potential_grad(add_prior_grad=True)[:10] #False)
+                    grad = self.get_potential_grad(add_prior_grad=False)[:10]
                 else:
                     potential = self.potential_sample[-1]
                     grad = self.potential_grad_sample[-1][:10]
@@ -164,10 +164,9 @@ class BNNTrainer(object):
         potential = self.compute_potential()
         self.optimizer.zero_grad()
         potential.backward()
-        grad = self.get_potential_grad(add_prior_grad=True) #False)
+        grad = self.get_potential_grad(add_prior_grad=False)
         self.potential_sample.append(potential)
         self.potential_grad_sample.append(grad.detach().numpy())
-
 
     def compute_potential(self):
         potential = 0
@@ -186,7 +185,7 @@ class BNNTrainer(object):
                     weight_decay = state['weight_decay']
                 except:
                     weight_decay = group['weight_decay']
-                potential += weight_decay / 2 * p.norm(p=2)
+                potential += weight_decay / 2 * p**2.sum()
         return potential
  
     def get_potential_grad(self, add_prior_grad=False):
