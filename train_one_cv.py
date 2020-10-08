@@ -62,8 +62,8 @@ def test_cv(trajs, ncv, batches, args):
     mean_avg_pred = np.zeros(n_traj)
     mean_avg_pred_cv = np.zeros(n_traj)
 
-    metrics = {'sample_var': 0., 'sample_var_cv': 0, 'sample_var_reduction': 0., 
-    'spectral_var': 0., 'spectral_var_cv': 0., 'spectral_var_reduction': 0.}
+    # metrics = {'sample_var': 0., 'sample_var_cv': 0, 'sample_var_reduction': 0., 
+    # 'spectral_var': 0., 'spectral_var_cv': 0., 'spectral_var_reduction': 0.}
 
     for x in tqdm(batches):
         avg_predictions_cv = []
@@ -72,34 +72,37 @@ def test_cv(trajs, ncv, batches, args):
         function_f = lambda model, x: get_binary_prediction(model, x, classes=[0, 1])
 
         for (models, _, potential_grad) in trajs:
-            uncertainty_quant = ClassificationUncertaintyMCMC(models, ncv)
+            #uncertainty_quant = ClassificationUncertaintyMCMC(models, ncv)
             sample_var_estimator = SampleVarianceEstimator(function_f, models)
-            spectral_var_estimator = SpectralVarianceEstimator(function_f, models)
+            #spectral_var_estimator = SpectralVarianceEstimator(function_f, models)
 
             pred = function_f(models, x)
             cv_vals = ncv(models, x, potential_grad=potential_grad)
-            if args.predictive_distribution is True:
-                pred = pred.mean(-1)
-                cv_vals = cv_vals.mean(-1)
+            # if args.predictive_distribution is True:
+            #     pred = pred.mean(-1)
+            #     cv_vals = cv_vals.mean(-1)
+
+            avg_predictions_cv.append((pred-cv_vals).mean().item())
+            avg_predictions_no_cv.append(pred.mean().item())
 
             sample_var_cv = sample_var_estimator.estimate_variance(x, use_cv=True, all_values=(pred - cv_vals))
             sample_var = sample_var_estimator.estimate_variance(x, use_cv=False, all_values=pred)
             
-            spectral_var_cv = spectral_var_estimator.estimate_variance(x, use_cv=True, all_values=(pred - cv_vals))
-            spectral_var = spectral_var_estimator.estimate_variance(x, use_cv=True, all_values=pred)
+            #spectral_var_cv = spectral_var_estimator.estimate_variance(x, use_cv=True, all_values=(pred - cv_vals))
+            #spectral_var = spectral_var_estimator.estimate_variance(x, use_cv=True, all_values=pred)
 
-            metrics['sample_var'] += sample_var.mean().item() / (n_batches * n_traj)
-            metrics['sample_var_cv'] += sample_var_cv.mean().item() / (n_batches * n_traj)
-            metrics['sample_var_reduction'] += (sample_var / sample_var_cv).mean().item() / (n_batches * n_traj)
-            metrics['spectral_var'] += spectral_var.mean().item() / (n_batches * n_traj)
-            metrics['spectral_var_cv'] += spectral_var_cv.mean().item() / (n_batches * n_traj)
-            metrics['spectral_var_reduction'] += (spectral_var / spectral_var_cv).mean().item() / (n_batches * n_traj)
+            # metrics['sample_var'] += sample_var.mean().item() / (n_batches * n_traj)
+            # metrics['sample_var_cv'] += sample_var_cv.mean().item() / (n_batches * n_traj)
+            # metrics['sample_var_reduction'] += (sample_var / sample_var_cv).mean().item() / (n_batches * n_traj)
+            # metrics['spectral_var'] += spectral_var.mean().item() / (n_batches * n_traj)
+            # metrics['spectral_var_cv'] += spectral_var_cv.mean().item() / (n_batches * n_traj)
+            # metrics['spectral_var_reduction'] += (spectral_var / spectral_var_cv).mean().item() / (n_batches * n_traj)
 
             #print(x)
-            avg_predictions_cv.append(
-              uncertainty_quant.estimate_emperical_mean(x=x, predictions=pred, cv_values=cv_vals, use_cv=True).mean().item())
-            avg_predictions_no_cv.append(
-              uncertainty_quant.estimate_emperical_mean(x=x, predictions=pred, use_cv=False).mean().item())
+            # avg_predictions_cv.append(
+            #   uncertainty_quant.estimate_emperical_mean(x=x, predictions=pred, cv_values=cv_vals, use_cv=True).mean().item())
+            # avg_predictions_no_cv.append(
+            #   uncertainty_quant.estimate_emperical_mean(x=x, predictions=pred, use_cv=False).mean().item())
 
         mean_avg_pred += np.array(avg_predictions_no_cv) / n_batches
         mean_avg_pred_cv += np.array(avg_predictions_cv) / n_batches
@@ -108,8 +111,8 @@ def test_cv(trajs, ncv, batches, args):
     plt.xticks([0,1], ['without CV', 'with CV'])
     plt.savefig(fig_path)
 
-    with Path(metrics_path).open('w') as f:
-        json.dump(metrics, f)
+    # with Path(metrics_path).open('w') as f:
+    #     json.dump(metrics, f)
 
 
 def train_cv(trajs, ncv, batches, args):

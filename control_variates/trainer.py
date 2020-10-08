@@ -44,6 +44,7 @@ class BNNTrainer(object):
             self.datasampler = self.trainloader
 
         self.scheduler = kwargs.get('scheduler', None)
+        #self.sample_prior = kwargs.get('resample_prior_every', 100)
         self.resample_prior_every = kwargs.get('resample_prior_every', 100)
         self.resample_momentum_every = kwargs.get('resample_momentum_every', 50)
         device = kwargs.get('device', 'cuda:0' if cuda.is_available() else 'cpu')
@@ -84,9 +85,9 @@ class BNNTrainer(object):
             n_ex = 0
             self.model.train()
             for x, y in self.trainloader:
-                resample_prior = (it_cnt % self.resample_prior_every == 0) and \
+                resample_prior = ((it_cnt + 1) % self.resample_prior_every == 0) and \
                 (epoch < resample_prior_until) and (epoch < burn_in_epochs)
-                resample_momentum = (it_cnt % self.resample_momentum_every == 0) and \
+                resample_momentum = ((it_cnt + 1) % self.resample_momentum_every == 0) and \
                 (epoch < resample_prior_until) and (epoch < burn_in_epochs)
                 loss, err = self.do_train_step(x.to(self.device), y.to(self.device), 
                     resample_prior=resample_prior, resample_momentum=resample_momentum)

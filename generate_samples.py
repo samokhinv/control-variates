@@ -58,6 +58,7 @@ def parse_arguments():
     parser.add_argument('--burn_lr', type=float, default=None)
     parser.add_argument('--max_sample_size', type=int, default=float('inf'))
     parser.add_argument('--save_potential_grad_type', type=str, choices=['determ', 'stoch'], default='determ')
+    parser.add_argument('--not_sample_prior', action='store_true')
 
     args = parser.parse_args()
 
@@ -111,8 +112,13 @@ def main(args):
         
         if args.burn_lr is None:
             args.burn_lr = args.bnn_lr
-        optimizer = mcmc_class(model.parameters(), lr=args.burn_lr, alpha0=args.alpha0, beta0=args.beta0)
+        optimizer = mcmc_class(model.parameters(), lr=args.burn_lr, alpha0=args.alpha0, beta0=args.beta0, 
+                                sample_prior=not args.not_sample_prior)
         scheduler = BurnInScheduler(optimizer, args.burn_in_epochs, args.burn_lr, args.bnn_lr)
+
+        if args.not_sample_prior is False:
+            args.resample_prior_every = float('inf')
+            args.resample_prior_until = 0
 
         trainer = BNNTrainer(model, 
             optimizer, 
