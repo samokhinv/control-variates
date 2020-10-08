@@ -3,6 +3,7 @@ import numpy as np
 import logging
 import torch
 from torch import cuda
+import random
 
 from .cv import SteinCV
 from .optim import BaseOptimizer
@@ -38,6 +39,9 @@ class BNNTrainer(object):
         self.err_func = err_func
         self.trainloader = trainloader
         self.valloader = valloader
+        self.datasampler = kwargs.get('datasampler', None)
+        if self.datasampler is None:
+            self.datasampler = self.trainloader
 
         self.scheduler = kwargs.get('scheduler', None)
         self.resample_prior_every = kwargs.get('resample_prior_every', 100)
@@ -47,6 +51,7 @@ class BNNTrainer(object):
         self.report_every = kwargs.get('report_every', 10)
         self.save_freq = kwargs.get('save_freq', 2)
         self.batch_size = kwargs.get('batch_size', 500)
+        self.save_potential_grad_type = kwargs.get('save_potential_grad_type', 'determ')
         
         self.device = torch.device(device)
         self.N_train = len(trainloader.dataset)
@@ -105,7 +110,7 @@ class BNNTrainer(object):
                         val_loss += self.nll_func(y_hat, y)
                         n_ex += x.shape[0]
                 if it_cnt <= start_save_step + 1:
-                    potential = self.compute_potential()
+                    potential = self.compute_potential(stoch=self.save_potential_grad_type == 'stoch')
                     self.optimizer.zero_grad()
                     potential.backward()
                     grad = self.get_potential_grad(add_prior_grad=False)[:10]
@@ -161,20 +166,28 @@ class BNNTrainer(object):
             self.potential_sample.pop(0)
             self.potential_grad_sample.pop(0)
         self.weight_set_sample.append(copy.deepcopy(self.model.state_dict()))
-        potential = self.compute_potential()
+        potential = self.compute_potential(stoch=self.save_potential_grad_type == 'stoch')
         self.optimizer.zero_grad()
         potential.backward()
         grad = self.get_potential_grad(add_prior_grad=False)
         self.potential_sample.append(potential)
         self.potential_grad_sample.append(grad.detach().numpy())
 
-    def compute_potential(self):
+    def compute_potential(self, stoch=False):
         potential = 0
         self.model.to(self.device)
-        for x, y in self.trainloader:
+        
+        if stoch is False:
+            for x, y in self.trainloader:
+                x, y = x.to(self.device), y.to(self.device)
+                y_hat = self.model(x)
+                potential += self.nll_func(y_hat, y)
+        else:
+            x, y = next(iter(self.datasampler))
             x, y = x.to(self.device), y.to(self.device)
             y_hat = self.model(x)
-            potential += self.nll_func(y_hat, y)
+            potential = self.N_train / x.shape[0] * self.nll_func(y_hat, y)
+
         
         for group in self.optimizer.param_groups:
             for p in group['params']:

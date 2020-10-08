@@ -26,7 +26,7 @@ def reshape_m_i(models_vec, image_vec):
 
 
 class SteinCV:
-    def __init__(self, psy_model, priors, potential_grad=None, 
+    def __init__(self, psy_model, priors=None, potential_grad=None, 
                 train_x=None, train_y=None, N_train=None):
         self.psy_model = psy_model
         self.train_x = train_x
@@ -47,7 +47,8 @@ class SteinCV:
     #     self.n_batch += self.train_x.shape[0]
     #     self.priors = None 
 
-    def __call__(self, models, x_batch, potential_grad=None):
+    def __call__(self, models, x_batch, priors=None, potential_grad=None):
+        priors = self.priors if priors is None else priors
         if potential_grad is None:
             potential_grad = self.potential_grad
         if isinstance(models, nn.Module):
@@ -71,7 +72,7 @@ class SteinCV:
                 psy_value = psy_value.unsqueeze(-1).repeat(1, 1, potential_grad.shape[-1])
         ncv_value = -1 * torch.einsum('ijk,ik->ij', psy_value, potential_grad) + psy_div
         return ncv_value
-
+        
 
 class BasePsy(nn.Module):
     def __init__(self):

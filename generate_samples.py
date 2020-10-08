@@ -57,6 +57,7 @@ def parse_arguments():
     parser.add_argument('--not_normalize', action='store_true')
     parser.add_argument('--burn_lr', type=float, default=None)
     parser.add_argument('--max_sample_size', type=int, default=float('inf'))
+    parser.add_argument('--save_potential_grad_type', type=str, choices=['determ', 'stoch'], default='determ')
 
     args = parser.parse_args()
 
@@ -75,9 +76,13 @@ def main(args):
         Path(args.data_dir).mkdir(exist_ok=True, parents=True)
         trainloader, valloader = load_mnist_dataset(Path(args.data_dir), 
                 args.batch_size, classes=args.classes, normalize=not args.not_normalize)
+    
     elif args.dataset == 'uci':
         trainloader, valloader = load_uci_dataset(Path(args.data_dir), 
                 args.batch_size, normalize=not args.not_normalize)
+        
+    randsampler = torch.utils.data.RandomSampler(trainloader.dataset, num_samples=args.batch_size, replacement=True)
+    datasampler = torch.utils.data.DataLoader(trainloader.dataset, batch_size=args.batch_size, sampler=randsampler)
    
     def nll_func(y_hat, y):
         nll = F.cross_entropy(y_hat, y, reduction='sum')
@@ -115,6 +120,7 @@ def main(args):
             err_func, 
             trainloader, 
             valloader,
+            datasampler=datasampler,
             scheduler=scheduler, 
             device=device, 
             resample_prior_every=args.resample_prior_every,
@@ -122,7 +128,8 @@ def main(args):
             save_freq=args.save_freq,
             max_weight_set_size=args.max_sample_size,
             batch_size=args.batch_size,
-            report_every=args.report_every
+            report_every=args.report_every,
+            save_potential_grad_type=args.save_potential_grad_type
             )
         trainer.train(n_epoch=args.n_epoch, burn_in_epochs=args.burn_in_epochs, resample_prior_until=args.resample_prior_until)
         weights_sample = trainer.weight_set_sample
