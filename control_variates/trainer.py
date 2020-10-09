@@ -97,7 +97,7 @@ class BNNTrainer(object):
                 n_ex += x.shape[0]
                 it_cnt += 1
 
-                if epoch > burn_in_epochs and it_cnt % self.save_freq == 0 and it_cnt >= start_save_step:
+                if epoch >= burn_in_epochs and it_cnt % self.save_freq == 0 and it_cnt >= start_save_step:
                     self.save_sampled_net()
 
             if epoch % self.report_every == 0:
