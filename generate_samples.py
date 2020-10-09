@@ -116,7 +116,7 @@ def main(args):
                                 sample_prior=not args.not_sample_prior)
         scheduler = BurnInScheduler(optimizer, args.burn_in_epochs, args.burn_lr, args.bnn_lr)
 
-        if args.not_sample_prior is False:
+        if args.not_sample_prior is True:
             args.resample_prior_every = float('inf')
             args.resample_prior_until = 0
 

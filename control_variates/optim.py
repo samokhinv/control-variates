@@ -30,7 +30,7 @@ class SGLD(BaseOptimizer):
 
         self.alpha0 = alpha0
         self.beta0 = beta0
-        self.weight_decay = gamma(shape=self.alpha0, scale=1/self.beta0) if sample_prior else 1.0
+        self.weight_decay = gamma(shape=self.alpha0, scale=1/self.beta0) if sample_prior is True else 0.01
 
         if lr < 0.0:
             raise ValueError("Invalid learning rate: {}".format(lr))
@@ -106,7 +106,7 @@ class ScaleAdaSGHMC(BaseOptimizer):
         self.eps = 1e-6
         self.alpha0 = alpha0
         self.beta0 = beta0
-        self.weight_decay = gamma(shape=self.alpha0, scale=1/self.beta0) is sample_prior is True else 1.0
+        self.weight_decay = gamma(shape=self.alpha0, scale=1/self.beta0) if sample_prior is True else 0.01
 
         if self.weight_decay <= 0.0:
             raise ValueError("Invalid weight_decay value: {}".format(self.weight_decay))

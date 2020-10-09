@@ -4,7 +4,7 @@ from torchvision import transforms, datasets
 from pathlib import Path
 from torch.utils.data import Subset
 import dill as pickle
-from utils import DatasetStandarsScaler
+from utils import DatasetStandarsScaler, standartize
 
 
 def load_uci_dataset(data_dir, batch_size, classes=None, normalize=True):
@@ -34,10 +34,15 @@ def load_uci_dataset(data_dir, batch_size, classes=None, normalize=True):
     #         valset = Subset(valset, train_idx)
 
     if normalize is True:
-        scaler = DatasetStandarsScaler()
-        scaler.fit(trainset)
-        trainset = scaler.transform(trainset)
-        valset = scaler.transform(valset)
+        X_train = np.vstack([x.numpy() for x, _ in trainset])
+        X_test = np.vstack([x.numpy() for x, _ in valset])
+        X_train, X_test = standartize(X_train, X_test, intercept=True)
+        # scaler = DatasetStandarsScaler()
+        # scaler.fit(trainset)
+        # trainset = scaler.transform(trainset)
+        # valset = scaler.transform(valset)
+        trainset = [(x, y) for x, (_, y) in zip(X_train, trainset)]
+        valset = [(x, y) for x, (_, y) in zip(X_train, valset)]
 
     if batch_size == -1:
         train_batch_size = len(trainset)
