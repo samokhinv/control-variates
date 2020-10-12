@@ -117,11 +117,11 @@ if __name__ == '__main__':
     randsampler = torch.utils.data.RandomSampler(trainloader.dataset, replacement=False)
     batchsampler = torch.utils.data.DataLoader(trainloader.dataset, batch_size=args.batch_size, sampler=randsampler)
 
-    trajs, traj_grads, priors = [], [], []
-    for traj, traj_grad, prior in generate(args, batchsampler, valloader, device):
-        trajs.append(traj)
-        traj_grads.append(traj_grad)
-        priors.append(prior)
+    #trajs, traj_grads, priors = [], [], []
+    for  trajs, traj_grads, priors in generate(args, batchsampler, valloader, device):
+        #trajs.append(traj)
+        #traj_grads.append(traj_grad)
+        #priors.append(prior)
         pickle.dump((trajs, traj_grads, priors), Path(args.save_path).open('wb'))
 
 
