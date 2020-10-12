@@ -133,7 +133,7 @@ class SG_MCMC_Inference:
             bayesian_nn = self.bayesian_nn
             sg_mcmc = self.sg_mcmc
             bayesian_nn.init()
-            sg_mcmc.init(bayesian_nn)
+            sg_mcmc.init(bayesian_nn.parameters())
             traj, traj_grad, prior_dict = self._sample_traj(bayesian_nn, sg_mcmc, n_burn, n_sample, resample_prior_until, save_freq)
             trajs.append(traj)
             traj_grads.append(traj_grad)

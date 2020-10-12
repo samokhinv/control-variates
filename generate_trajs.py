@@ -26,9 +26,9 @@ sg_mcmc_method = {'sgld': SGLD, 'sghmc': H_SA_SGHMC}
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument('n_trajs', type=int, default=105)
-    parser.add_argument('n_burn', type=int, default=1e3)
-    parser.add_argument('n_sample', type=int, default=1e4)
+    parser.add_argument('--n_trajs', type=int, default=105)
+    parser.add_argument('--n_burn', type=int, default=1e3)
+    parser.add_argument('--n_sample', type=int, default=1e4)
     parser.add_argument('--lr', type=float, default=1e-7)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--n_hidden_layers', type=int, default=0)
@@ -66,7 +66,7 @@ def generate(args, batchsampler, valloader, device):
     for d in x.shape:
         input_dim *= d
     bayesian_nn = LogRegression((input_dim,), prior)
-
+    bayesian_nn.sample_prior()
     bayesian_nn.init_state_dict = bayesian_nn.state_dict()
     bayesian_nn.init_prior_dict = bayesian_nn.prior_dict()
 
@@ -117,7 +117,11 @@ if __name__ == '__main__':
     randsampler = torch.utils.data.RandomSampler(trainloader.dataset, num_samples=args.batch_size, replacement=True)
     batchsampler = torch.utils.data.DataLoader(trainloader.dataset, batch_size=args.batch_size, sampler=randsampler)
 
-    for trajs, traj_grads, priors in generate(args, batchsampler, valloader, device): 
+    trajs, traj_grads, priors = [], [], []
+    for traj, traj_grad, prior in generate(args, batchsampler, valloader, device):
+        trajs.append(traj)
+        traj_grads.append(traj_grad)
+        priors.append(prior)
         pickle.dump((trajs, traj_grads, priors), Path(args.save_path).open('wb'))
 
 

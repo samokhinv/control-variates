@@ -48,7 +48,7 @@ class BayesianNN(nn.Module):
 
     @abstractmethod
     def load_prior_dict(self, prior_dict):
-        for n, p in prior_dict:
+        for n, p in self.named_parameters:
             p.sigma2 = prior_dict[n]
     
     @abstractmethod
