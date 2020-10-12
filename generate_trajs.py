@@ -114,7 +114,7 @@ if __name__ == '__main__':
         trainloader, valloader = load_uci_dataset(Path(args.data_dir), 
                 args.batch_size, normalize=not args.not_normalize)
         
-    randsampler = torch.utils.data.RandomSampler(trainloader.dataset, num_samples=args.batch_size, replacement=True)
+    randsampler = torch.utils.data.RandomSampler(trainloader.dataset, replacement=False)
     batchsampler = torch.utils.data.DataLoader(trainloader.dataset, batch_size=args.batch_size, sampler=randsampler)
 
     trajs, traj_grads, priors = [], [], []

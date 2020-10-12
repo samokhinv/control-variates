@@ -64,7 +64,8 @@ class SG_MCMC_Inference:
         n_pts = 0
         with torch.no_grad():
             for x, y in self.valloader:
-                out = bayesian_nn(x)
+                x, y = x.to(self.device), y.to(self.device)
+                out = bayesian_nn(x.float())
                 val_loss += self.loss_fn(out, y).item()
                 if self.err_fn is not None:
                     val_err += self.err_fn(out, y).item()

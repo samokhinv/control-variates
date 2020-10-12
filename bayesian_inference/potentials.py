@@ -36,7 +36,7 @@ class ClassificationPotential(Potential):
             potential = 0
             for x, y in self.batchsampler:
                 x, y = x.to(self.device), y.to(self.device)
-                out = bayesian_nn(x)
+                out = bayesian_nn(x.float())
                 log_prob = F.cross_entropy(out, y, reduction='sum')
                 potential -= log_prob
             potential -= bayesian_nn.get_log_prior()
