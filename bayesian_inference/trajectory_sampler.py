@@ -109,7 +109,6 @@ class SG_MCMC_Inference:
             potential = self.potential(bayesian_nn, stoch=self.save_stoch_grad)
             sg_mcmc.zero_grad()
             potential_grad = self.potential.grad(bayesian_nn, potential=potential)
-            potential_grad = potential_grad.detach.numpy()
             sg_mcmc.step(resample_momentum=resample_momentum, burn_in=False)
 
             if it % self.report_every == 0:
