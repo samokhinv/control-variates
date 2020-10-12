@@ -28,7 +28,7 @@ class ClassificationPotential(Potential):
         if stoch is True:
             x, y = next(iter(self.batchsampler))
             x, y = x.to(self.device), y.to(self.device)
-            out = bayesian_nn(x)
+            out = bayesian_nn(x.float())
             log_prob = F.cross_entropy(out, y, reduction='mean')
 
             potential = -self.N_pts * log_prob - bayesian_nn.get_log_prior()
