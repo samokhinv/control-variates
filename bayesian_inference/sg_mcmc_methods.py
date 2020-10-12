@@ -1,48 +1,52 @@
 import torch
 from torch.optim import Optimizer
+from abc import ABC, abstractmethod
 
-from numpy.random import gamma
+#from numpy.random import gamma
+# class BaseOptimizer(Optimizer):
+#     def __init__(self, params, defaults):
+#         super().__init__(params, defaults)
+#         self.alpha0 = 1
+#         self.beta0 = 1
+
+#     def step(self, burn_in=None, resample_momentum=None, resample_prior=None):
+#         raise NotImplementedError
+
+#     def resample_prior(self, p):
+#         alpha = self.alpha0 + p.data.nelement() / 2
+#         beta = self.beta0 + (p.data ** 2).sum().item() / 2
+#         return gamma(shape=alpha, scale=1 / beta)  # gamma sample
 
 
-class BaseOptimizer(Optimizer):
-    def __init__(self, params, defaults):
-        super().__init__(params, defaults)
-        self.alpha0 = 1
-        self.beta0 = 1
-
-    def step(self, burn_in=None, resample_momentum=None, resample_prior=None):
-        raise NotImplementedError
-
-    def resample_prior(self, p):
-        alpha = self.alpha0 + p.data.nelement() / 2
-        beta = self.beta0 + (p.data ** 2).sum().item() / 2
-        return gamma(shape=alpha, scale=1 / beta)  # gamma sample
+class SG_MCMC(Optimizer):
+    def init(self, params):
+        self.__init__(params, **self.defaults)
 
 
-class SGLD(BaseOptimizer):
+class SGLD(SG_MCMC):
     def __init__(self,
                  params,
                  lr: float = 1e-3,
-                 weight_decay: float = 0.5,
-                 alpha0: float = 1,
-                 beta0: float = 1,
-                 sample_prior=True):
+                 #weight_decay: float = 0.5,
+                 #alpha0: float = 1,
+                 #beta0: float = 1,
+                 ):
 
-        self.alpha0 = alpha0
-        self.beta0 = beta0
-        self.weight_decay = gamma(shape=self.alpha0, scale=1/self.beta0) if sample_prior is True else 0.01
+        #self.alpha0 = alpha0
+        #self.beta0 = beta0
+        #self.weight_decay = gamma(shape=self.alpha0, scale=1/self.beta0) if sample_prior is True else 0.01
 
         if lr < 0.0:
             raise ValueError("Invalid learning rate: {}".format(lr))
-        if weight_decay <= 0.0:
-            raise ValueError("Invalid weight_decay value: {}".format(weight_decay))
+        #if weight_decay <= 0.0:
+        #    raise ValueError("Invalid weight_decay value: {}".format(weight_decay))
 
-        defaults = dict(lr=lr)
+        self.defaults = dict(lr=lr)
 
-        super(SGLD, self).__init__(params, defaults)
+        super().__init__(params, self.defaults)
 
     @torch.no_grad()
-    def step(self, burn_in=None, resample_momentum=None, resample_prior=False):  # the same call as for HMC
+    def step(self, burn_in=False, resample_momentum=False):  # the same call as for HMC
         loss = None
         flat_grad = []
         for group in self.param_groups:
@@ -50,10 +54,10 @@ class SGLD(BaseOptimizer):
                 if p.grad is None:
                     continue
                 state = self.state[p]
-                if len(state) == 0:
-                    state['weight_decay'] = self.weight_decay
-                if resample_prior:
-                    state['weight_decay'] = self.resample_prior(p)
+                #if len(state) == 0:
+                #    state['weight_decay'] = self.weight_decay
+                #if resample_prior:
+                #    state['weight_decay'] = self.resample_prior(p)
 
                 d_p = p.grad
                 weight_decay = state['weight_decay']
@@ -69,7 +73,7 @@ class SGLD(BaseOptimizer):
         return loss, flat_grad
 
 
-class ScaleAdaSGHMC(BaseOptimizer):
+class ScaleAdaSGHMC(SG_MCMC):
     """ Stochastic Gradient Hamiltonian Monte-Carlo Sampler that uses scale adaption during burn-in
         procedure to find some hyperparamters. A gaussian prior is placed over parameters and a Gamma
         Hyperprior is placed over the prior's standard deviation
@@ -89,10 +93,10 @@ class ScaleAdaSGHMC(BaseOptimizer):
                  params,
                  lr: float = 1e-2,
                  base_c: float = 0.05,
-                 gauss_sig: float = 0.1,
-                 alpha0: float = 1,
-                 beta0: float = 1,
-                 sample_prior=True):
+                 #gauss_sig: float = 0.1,
+                 #alpha0: float = 1,
+                 #beta0: float = 1,
+                 ):
         """
         Set up the optimizer
 
@@ -104,25 +108,25 @@ class ScaleAdaSGHMC(BaseOptimizer):
         :param beta0: flaot, initial hyperprior
         """
         self.eps = 1e-6
-        self.alpha0 = alpha0
-        self.beta0 = beta0
-        self.weight_decay = gamma(shape=self.alpha0, scale=1/self.beta0) if sample_prior is True else 0.01
+        #self.alpha0 = alpha0
+        #self.beta0 = beta0
+        #self.weight_decay = gamma(shape=self.alpha0, scale=1/self.beta0) if sample_prior is True else 0.01
 
-        if self.weight_decay <= 0.0:
-            raise ValueError("Invalid weight_decay value: {}".format(self.weight_decay))
+        #if self.weight_decay <= 0.0:
+        #    raise ValueError("Invalid weight_decay value: {}".format(self.weight_decay))
         if lr < 0.0:
             raise ValueError("Invalid learning rate: {}".format(lr))
         if base_c < 0:
             raise ValueError("Invalid friction term: {}".format(base_c))
 
-        defaults = dict(
+        self.defaults = dict(
             lr=lr,
             base_c=base_c,
         )
-        super(ScaleAdaSGHMC, self).__init__(params, defaults)
+        super().__init__(params, self.defaults)
 
     @torch.no_grad()
-    def step(self, burn_in=False, resample_momentum=False, resample_prior=False):
+    def step(self, burn_in=False, resample_momentum=False):
         """Simulate discretized Hamiltonian dynamics for one step"""
         loss = None
         flat_grad = []
@@ -138,12 +142,12 @@ class ScaleAdaSGHMC(BaseOptimizer):
                     state["V_hat"] = torch.ones_like(p)
                     state["v_momentum"] = torch.zeros_like(
                         p)  # p.data.new(p.data.size()).normal_(mean=0, std=np.sqrt(group["lr"])) #
-                    state['weight_decay'] = self.weight_decay
+                    #state['weight_decay'] = self.weight_decay
 
                 state["iteration"] += 1  # this is kind of useless now but lets keep it provisionally
 
-                if resample_prior:
-                    state['weight_decay'] = self.resample_prior(p)
+                #if resample_prior:
+                #    state['weight_decay'] = self.resample_prior(p)
 
                 base_c, lr = group["base_c"], group["lr"]
                 weight_decay = state["weight_decay"]
@@ -183,8 +187,16 @@ class ScaleAdaSGHMC(BaseOptimizer):
         return loss, flat_grad
 
 
-class SGHMC(BaseOptimizer):
-    def __init__(self, params, lr: float = 1e-2, base_c: float = 0.05, mass: float = 1, gauss_sig: float = 0.1, alpha0: float = 10, beta0: float = 10):
+class SGHMC(SG_MCMC):
+    def __init__(self, 
+                params, 
+                lr: float = 1e-2, 
+                base_c: float = 0.05, 
+                mass: float = 1, 
+                #gauss_sig: float = 0.1, 
+                #alpha0: float = 10, 
+                #beta0: float = 10
+                ):
         """
         Set up the optimizer
 
@@ -197,16 +209,15 @@ class SGHMC(BaseOptimizer):
         :param beta0: flaot, initial hyperprior
         """
         self.eps = 1e-6
-        self.alpha0 = alpha0
-        self.beta0 = beta0
+        #self.alpha0 = alpha0
+        #self.beta0 = beta0
+        #if gauss_sig == 0:
+        #    self.weight_decay = 0
+        #else:
+        #    self.weight_decay = 1 / (gauss_sig ** 2)
+        #if self.weight_decay <= 0.0:
+        #    raise ValueError("Invalid weight_decay value: {}".format(self.weight_decay))
 
-        if gauss_sig == 0:
-            self.weight_decay = 0
-        else:
-            self.weight_decay = 1 / (gauss_sig ** 2)
-
-        if self.weight_decay <= 0.0:
-            raise ValueError("Invalid weight_decay value: {}".format(self.weight_decay))
         if lr < 0.0:
             raise ValueError("Invalid learning rate: {}".format(lr))
         if base_c < 0:
@@ -214,14 +225,14 @@ class SGHMC(BaseOptimizer):
         if mass <= 0.0:
             raise ValueError("Invalid mass term: {}".format(mass))
 
-        defaults = dict(
+        self.defaults = dict(
             lr=lr,
             base_c=base_c,
             mass=mass
         )
-        super(SGHMC, self).__init__(params, defaults)
+        super().__init__(params, self.defaults)
 
-    def step(self, burn_in=None, resample_momentum=False, resample_prior=False):
+    def step(self, burn_in=None, resample_momentum=False):
         """Simulate discretized Hamiltonian dynamics for one step"""
         loss = None
 
@@ -233,12 +244,12 @@ class SGHMC(BaseOptimizer):
                 if len(state) == 0:
                     state["iteration"] = 0
                     state["r_momentum"] = torch.zeros_like(p)
-                    state['weight_decay'] = self.weight_decay
+                    #state['weight_decay'] = self.weight_decay
 
                 state["iteration"] += 1  # this is kind of useless now but lets keep it provisionally
 
-                if resample_prior:
-                    state['weight_decay'] = self.resample_prior(p)
+                #if resample_prior:
+                #    state['weight_decay'] = self.resample_prior(p)
 
                 base_c, mass, lr = group["base_c"], group["mass"], group["lr"]
                 weight_decay = state["weight_decay"]

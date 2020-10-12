@@ -35,17 +35,6 @@ class SteinCV:
         self.N_train = N_train
         self.potential_grad = potential_grad
 
-    # def update_potential(self, train_x, train_y):
-    #     log_likelihoods = [(compute_log_likelihood(self.train_x, self.train_y, model) * self.N_train).backward() for model in models]
-    #     #ll_grad = torch.stack([compute_tricky_divergence(model, self.priors) for model in models])  # ll_grad для каждой модели
-    #     ll_grad = self.train_x.shape[0] * torch.stack([compute_concat_gradient(model, self.priors) for model in models])
-    #     if self.ll_grad is None:
-    #         self.ll_grad = ll_grad / self.train_x.shape[0]
-    #     else:
-    #         self.ll_grad = (self.ll_grad * self.n_batch + ll_grad) / (self.n_batch + self.train_x.shape[0])
-
-    #     self.n_batch += self.train_x.shape[0]
-    #     self.priors = None 
 
     def __call__(self, models, x_batch, priors=None, potential_grad=None):
         priors = self.priors if priors is None else priors
@@ -57,21 +46,33 @@ class SteinCV:
             model.zero_grad()
         if potential_grad is None:
             potential_grad = compute_potential_grad(models, self.train_x, self.train_y, self.N_train, self.priors)
-        models_weights = torch.stack([state_dict_to_vec(model.state_dict()) for model in models])  # батч моделей
+        models_weights = torch.stack([state_dict_to_vec(model.state_dict()) for model in models])
         models_weights.requires_grad = True
-        psy_value = self.psy_model(models_weights, x_batch)  # хотим тензор число моделей X число примеров
+        psy_value = self.psy_model(models_weights, x_batch)
         
         if isinstance(self.psy_model, PsyConstVector):
             psy_div = 0.
         else:
             psy_func = partial(self.psy_model, x=x_batch)
             psy_jac = torch.autograd.functional.jacobian(psy_func, models_weights, create_graph=True)
-            psy_div = torch.einsum('ijil->ij', psy_jac)  # я чет завис с размерностями: i - n_models, j - n_images, l - n_weights
+            psy_div = torch.einsum('ijil->ij', psy_jac)
         if psy_value.ndim == 2:
             if potential_grad.ndim == 2:
                 psy_value = psy_value.unsqueeze(-1).repeat(1, 1, potential_grad.shape[-1])
         ncv_value = -1 * torch.einsum('ijk,ik->ij', psy_value, potential_grad) + psy_div
         return ncv_value
+
+    # def update_potential(self, train_x, train_y):
+    #     log_likelihoods = [(compute_log_likelihood(self.train_x, self.train_y, model) * self.N_train).backward() for model in models]
+    #     #ll_grad = torch.stack([compute_tricky_divergence(model, self.priors) for model in models])  # ll_grad для каждой модели
+    #     ll_grad = self.train_x.shape[0] * torch.stack([compute_concat_gradient(model, self.priors) for model in models])
+    #     if self.ll_grad is None:
+    #         self.ll_grad = ll_grad / self.train_x.shape[0]
+    #     else:
+    #         self.ll_grad = (self.ll_grad * self.n_batch + ll_grad) / (self.n_batch + self.train_x.shape[0])
+
+    #     self.n_batch += self.train_x.shape[0]
+    #     self.priors = None 
         
 
 class BasePsy(nn.Module):

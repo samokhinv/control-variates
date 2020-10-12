@@ -3,6 +3,8 @@ from pathlib import Path
 import dill as pickle
 import numpy as np
 import copy
+import numpy as np
+import random
 
 
 def standartize(X_train,X_test,intercept = True):
@@ -56,25 +58,37 @@ class DatasetStandarsScaler():
         return new_dataset
 
 
-def load_samples(samples_path, model_class, model_kwargs=None):
-    with Path(samples_path).open('rb') as fp:
-        samples = pickle.load(fp)
+def load_trajs(trajs_path, bayesian_nn_class, canvas):
+    trajs, traj_grads, priors = pickle.load(Path(trajs_path).open('rb'))
+    
+    for traj in zip(trajs):
+        for i, state_dict in enumerate(traj):
+            traj[i] = bayesian_nn_class(canvas).load_state_dict(state_dict)
+    
+    traj_grads = torch.FloatTensor(np.stack(traj_grads))
+            
+    # trajectories = [[model_class(**model_kwargs)
+    #              for j in range(len(samples[i][0]))]
+    #             for i in range(len(samples))]
 
-    trajectories = [[model_class(**model_kwargs)
-                 for j in range(len(samples[i][0]))]
-                for i in range(len(samples))]
+    # for i in range(len(samples)):
+    #     for j in range(len(samples[i][0])):
+    #         trajectories[i][j].load_state_dict(samples[i][0][j])
 
-    for i in range(len(samples)):
-        for j in range(len(samples[i][0])):
-            trajectories[i][j].load_state_dict(samples[i][0][j])
+    # priors = [samples[i][2] for i in range(len(samples))]
 
-    priors = [samples[i][2] for i in range(len(samples))]
+    # if len(samples[0]) == 3:
+    #     potential_grads = torch.tensor(
+    #       [samples[i][1] for i in range(len(samples))], dtype=torch.float
+    #       ) 
+    # else:
+    #     potential_grads = None
 
-    if len(samples[0]) == 3:
-        potential_grads = torch.tensor(
-          [samples[i][1] for i in range(len(samples))], dtype=torch.float
-          ) 
-    else:
-        potential_grads = None
+    return trajs, traj_grads, priors
 
-    return trajectories, priors, potential_grads
+
+def random_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
