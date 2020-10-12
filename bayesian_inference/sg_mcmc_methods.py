@@ -60,10 +60,10 @@ class SGLD(SG_MCMC):
                 #    state['weight_decay'] = self.resample_prior(p)
 
                 d_p = p.grad
-                weight_decay = state['weight_decay']
+                #weight_decay = state['weight_decay']
 
-                if weight_decay != 0:
-                    d_p.add_(p, alpha=weight_decay)
+                #if weight_decay != 0:
+                #    d_p.add_(p, alpha=weight_decay)
 
                 flat_grad.append(d_p.flatten())
 
@@ -150,12 +150,12 @@ class ScaleAdaSGHMC(SG_MCMC):
                 #    state['weight_decay'] = self.resample_prior(p)
 
                 base_c, lr = group["base_c"], group["lr"]
-                weight_decay = state["weight_decay"]
+                #weight_decay = state["weight_decay"]
                 tau, g, v_hat = state["tau"], state["g"], state["V_hat"]
 
                 d_p = p.grad
-                if weight_decay != 0:
-                    d_p.add_(p.data, alpha=weight_decay)
+                #if weight_decay != 0:
+                #    d_p.add_(p.data, alpha=weight_decay)
                 flat_grad.append(d_p.flatten())
                 # update parameters during burn-in
                 if burn_in:  # We update g first as it makes most sense
@@ -252,11 +252,11 @@ class SGHMC(SG_MCMC):
                 #    state['weight_decay'] = self.resample_prior(p)
 
                 base_c, mass, lr = group["base_c"], group["mass"], group["lr"]
-                weight_decay = state["weight_decay"]
+                #weight_decay = state["weight_decay"]
 
                 d_p = p.grad
-                if weight_decay != 0:
-                    d_p.add_(p.data, alpha=weight_decay)
+                #if weight_decay != 0:
+                #    d_p.add_(p.data, alpha=weight_decay)
 
                 if resample_momentum:
                     state["r_momentum"] = torch.normal(mean=torch.zeros_like(d_p),

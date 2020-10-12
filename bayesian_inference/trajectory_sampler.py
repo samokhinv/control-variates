@@ -70,8 +70,8 @@ class SG_MCMC_Inference:
                 if self.err_fn is not None:
                     val_err += self.err_fn(out, y).item()
                 n_pts += out.shape[0]
-            potential = self.potential(bayesian_nn, stoch=False)
-            potential_grad = self.potential.grad(bayesian_nn, potential=potential)
+        potential = self.potential(bayesian_nn, stoch=False)
+        potential_grad = self.potential.grad(bayesian_nn, potential=potential)
         logger.info(f'potential: {potential.item()}, potential_grad: {potential_grad[:10].tolist()}')
         logger.info(f'val loss: {val_loss / n_pts}, val error: {val_err / n_pts}')
 
