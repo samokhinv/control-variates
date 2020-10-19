@@ -63,7 +63,8 @@ def load_trajs(trajs_path, bayesian_nn_class, canvas, requires_grad=False):
     
     for traj in trajs:
         for i, state_dict in enumerate(traj):
-            traj[i] = bayesian_nn_class(canvas).load_state_dict(state_dict)
+            traj[i] = bayesian_nn_class(canvas)
+            traj[i].load_state_dict(state_dict)
             for p in traj[i].parameters():
                 p.requires_grad = False
     

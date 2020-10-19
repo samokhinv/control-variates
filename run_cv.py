@@ -157,7 +157,7 @@ def parse_arguments():
     parser.add_argument('--width', type=int, default=100)
     parser.add_argument('--depth', type=int, default=1)
     parser.add_argument('--output_dim', type=int, default=2)
-    parser.add_argument('--samples_path', type=str, required=True)
+    parser.add_argument('--trajs_path', type=str, required=True)
     parser.add_argument('--psy_type', type=str, choices=['const', 'mlp', 'linear'], default='const')
     parser.add_argument('--device', type=str, default='cpu')
     parser.add_argument('--classes', type=int, nargs='+', default=[3, 5])
@@ -201,8 +201,8 @@ def main(trajs, traj_grads, x, device, args):
 
     #nns_and_grads = list(zip(trajs, traj_grads))
     #train_nns_and_grads , test_nns_and_grads , _, _ = train_test_split(nns_and_grads, [None]*len(trajs), test_size=len(trajs)-args.n_train_traj)
-    train_trajs = trajs[:args.n_train_traj], traj_grads[:args.n_train_traj]
-    test_trajs = trajs[args.n_train_traj:], traj_grads[args.n_train_traj:]
+    train_trajs = list(zip(trajs[:args.n_train_traj], traj_grads[:args.n_train_traj]))
+    test_trajs = list(zip(trajs[args.n_train_traj:], traj_grads[args.n_train_traj:]))
     
     batches = []
     randperm = torch.randperm(x.shape[0])

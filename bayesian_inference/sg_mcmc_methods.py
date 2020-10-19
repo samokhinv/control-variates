@@ -87,17 +87,35 @@ class SVRG_LD(SG_MCMC):
 
         super().__init__(params, self.defaults)
 
+        self.dataset_grads = copy.deepcopy(self.param_groups)
+        self.batch_grads = copy.deepcopy(self.param_groups)
+
+    def load_dataset_grads(self, dataset_param_groups):
+      for group, group_d in zip(self.dataset_grads, dataset_param_groups):
+            for i, p_d in enumerate(group_d['params']):
+                if p_d.grad is None:
+                    continue
+                group['params'][i] = p_d.grad
+
+    def load_batch_grads(self, batch_param_groups):
+      for group, group_b in zip(self.batch_grads, batch_param_groups):
+            for i, p_b in enumerate(group_b['params']):
+                if p_b.grad is None:
+                    continue
+                group['params'][i] = p_b.grad
+
     @torch.no_grad()
-    def step(self, dataset_param_groups, batch_param_groups, burn_in=False, resample_momentum=False):  # the same call as for HMC
+    def step(self, burn_in=False, resample_momentum=False):  # the same call as for HMC
         loss = None
         flat_grad = []
-        for group, group_d, group_b in zip(self.param_groups, dataset_param_groups, batch_param_groups):
-            for p, p_d, p_b in zip(group['params'], group_d['params'], group_b['params']):
+        for group, group_d, group_b in zip(self.param_groups, self.dataset_grads, self.batch_grads):
+            for p, g_d, g_b in zip(group['params'], group_d['params'], group_b['params']):
                 if p.grad is None:
                     continue
 
                 d_p = p.grad
-                d_p = p_d.grad + (d_p - p_b.grad)
+                #print(p_d, p_d.grad, p_b, p_b.grad)
+                d_p = g_d + (d_p - g_b)
 
                 flat_grad.append(d_p.flatten())
 

@@ -10,7 +10,7 @@ from typing import List, Callable
 from collections import defaultdict
 import tqdm
 
-from sg_mcmc import SVRG_LD
+from .sg_mcmc_methods import SVRG_LD
 
 
 FORMAT = '%(asctime)-15s %(message)s'
@@ -56,7 +56,8 @@ class SG_MCMC_Inference:
         self.report_every = kwargs.get('report_every', 10)
         self.save_freq = kwargs.get('save_freq', 2)
         self.save_stoch_grad = kwargs.get('save_stoch_grad', True)
-        self.epoch_length = kwargs.get('save_stoch_grad', None)
+        self.epoch_length = kwargs.get('epoch_length', None)
+        print(self.epoch_length)
         if self.epoch_length is None:
             self.epoch_length = len(self.potential.batchsampler)
         
@@ -96,10 +97,12 @@ class SG_MCMC_Inference:
         for it in range(1, n_burn + 1):
             if isinstance(sg_mcmc, SVRG_LD) and (it-1) % self.epoch_length == 0:
                 bayesian_nn_fixed.load_state_dict(bayesian_nn.state_dict())
+                for p, p_f in zip(bayesian_nn.parameters(), bayesian_nn_fixed.parameters()):
+                    p_f.sigma2 = p.sigma2
                 potential = self.potential(bayesian_nn_fixed, stoch=False)
                 sg_mcmc_fixed.zero_grad()
                 potential.backward()
-                dataset_param_groups = copy.deepcopy(sg_mcmc_fixed.param_groups)
+                sg_mcmc.load_dataset_grads(sg_mcmc_fixed.param_groups)
 
             resample_prior = (it % self.resample_prior_every == 0) and \
                 (it < resample_prior_until)
@@ -114,16 +117,13 @@ class SG_MCMC_Inference:
                 potential = self.potential(bayesian_nn_fixed, stoch=self.save_stoch_grad, seed=seed)
                 sg_mcmc_fixed.zero_grad()
                 potential.backward()
-                batch_param_groups = copy.deepcopy(sg_mcmc_fixed.param_groups)
+                sg_mcmc.load_batch_grads(sg_mcmc_fixed.param_groups)
 
             potential = self.potential(bayesian_nn, stoch=self.save_stoch_grad, seed=seed)
             sg_mcmc.zero_grad()
             potential.backward()
 
-            if isinstance(sg_mcmc, SVRG_LD):
-                sg_mcmc.step(dataset_param_groups, batch_param_groups, resample_momentum=resample_momentum, burn_in=True)
-            else:
-                sg_mcmc.step(resample_momentum=resample_momentum, burn_in=True)
+            sg_mcmc.step(resample_momentum=resample_momentum, burn_in=True)
 
             if it % self.report_every == 0:
                 logger.info(f'Iteration: {it}')

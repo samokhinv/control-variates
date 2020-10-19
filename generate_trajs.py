@@ -13,7 +13,7 @@ import argparse
 
 from bayesian_inference.neural_networks import MLP, LogRegression, classif_err_fn, classif_loss_fn, GammaGaussPrior
 from bayesian_inference.potentials import ClassificationPotential
-from bayesian_inference.sg_mcmc_methods import  SGLD, ScaleAdaSGHMC as H_SA_SGHMC
+from bayesian_inference.sg_mcmc_methods import  SGLD, SVRG_LD, ScaleAdaSGHMC as H_SA_SGHMC
 from bayesian_inference.trajectory_sampler import SG_MCMC_Inference, BurnInScheduler
 
 from mnist_utils import load_mnist_dataset
@@ -21,7 +21,7 @@ from UCI_utils import load_uci_dataset
 from utils import random_seed
 
 
-sg_mcmc_method = {'sgld': SGLD, 'sghmc': H_SA_SGHMC}
+sg_mcmc_method = {'sgld': SGLD, 'svrg-ld': SVRG_LD, 'sghmc': H_SA_SGHMC}
 
 
 def parse_arguments():
@@ -42,13 +42,16 @@ def parse_arguments():
     parser.add_argument('--save_freq', type=int, default=1)
     parser.add_argument('--report_every', type=int, default=1000)
     parser.add_argument('--device', type=str, default='cuda:0')
-    parser.add_argument('--sg_mcmc_method', type=str, choices=['sgld', 'sghmc'], default='sghmc')
+    parser.add_argument('--sg_mcmc_method', type=str, choices=[
+      'sgld', 'svrg-ld', 'sghmc'
+      ], default='sghmc')
     parser.add_argument('--seed', type=int, default=None)
     parser.add_argument('--save_path', type=str)
     parser.add_argument('--data_dir', type=str)
     parser.add_argument('--dataset', type=str, choices=['mnist', 'uci'], default='mnist')
     parser.add_argument('--not_normalize', action='store_true')
     parser.add_argument('--save_determ_grad', action='store_true')
+    parser.add_argument('--epoch_length', type=int, default=None)
     #parser.add_argument('--burn_lr', type=float, default=None)
     #parser.add_argument('--max_sample_size', type=int, default=float('inf'))
     #parser.add_argument('--not_sample_prior', action='store_true')
@@ -84,6 +87,7 @@ def generate(args, batchsampler, valloader, device):
             save_freq=args.save_freq,
             resample_prior_every=args.resample_prior_every,
             resample_momentum_every=args.resample_momentum_every,
+            epoch_length=args.epoch_length,
             report_every=args.report_every,
             save_stoch_grad=not args.save_determ_grad,
             )
