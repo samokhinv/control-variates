@@ -17,11 +17,8 @@ from UCI_utils import load_uci_dataset
 from control_variates.cv_utils import (
         SampleVarianceEstimator, 
         SpectralVarianceEstimator, 
-    #    compute_log_likelihood, 
-    #    compute_concat_gradient,
         state_dict_to_vec,
         compute_naive_variance,
-    #    compute_potential_grad,
     )
 from bayesian_inference.neural_networks import LogRegression, get_binary_prediction
 from control_variates.cv import PsyLinear, SteinCV, PsyConstVector, PsyMLP
@@ -162,7 +159,6 @@ def parse_arguments():
     parser.add_argument('--output_dim', type=int, default=2)
     parser.add_argument('--samples_path', type=str, required=True)
     parser.add_argument('--psy_type', type=str, choices=['const', 'mlp', 'linear'], default='const')
-    parser.add_argument('--classes', type=int, nargs='+', default=[3,5])
     parser.add_argument('--device', type=str, default='cpu')
     parser.add_argument('--classes', type=int, nargs='+', default=[3, 5])
     parser.add_argument('--save_path', type=str, required=True)

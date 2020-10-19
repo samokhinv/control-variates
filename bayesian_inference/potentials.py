@@ -24,7 +24,10 @@ class ClassificationPotential(Potential):
         self.device = device
         self.N_pts = len(batchsampler.dataset)
 
-    def __call__(self, bayesian_nn, stoch=True):
+    def __call__(self, bayesian_nn, stoch=True, seed=None):
+        if seed is not None:
+            torch.manual_seed(seed)
+
         if stoch is True:
             x, y = next(iter(self.batchsampler))
             x, y = x.to(self.device), y.to(self.device)

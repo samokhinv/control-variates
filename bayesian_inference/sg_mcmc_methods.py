@@ -1,4 +1,5 @@
 import torch
+import copy
 from torch.optim import Optimizer
 from abc import ABC, abstractmethod
 
@@ -69,6 +70,39 @@ class SGLD(SG_MCMC):
 
                 unit_noise = p.new_empty(p.size()).normal_()
                 p.add_(0.5 * d_p + unit_noise / group['lr'] ** 0.5, alpha=-group['lr'])
+        flat_grad = torch.cat(flat_grad, dim=0)
+        return loss, flat_grad
+
+
+class SVRG_LD(SG_MCMC):
+    def __init__(self,
+                 params,
+                 lr: float = 1e-3,
+                 ):
+
+        if lr < 0.0:
+            raise ValueError("Invalid learning rate: {}".format(lr))
+
+        self.defaults = dict(lr=lr)
+
+        super().__init__(params, self.defaults)
+
+    @torch.no_grad()
+    def step(self, dataset_param_groups, batch_param_groups, burn_in=False, resample_momentum=False):  # the same call as for HMC
+        loss = None
+        flat_grad = []
+        for group, group_d, group_b in zip(self.param_groups, dataset_param_groups, batch_param_groups):
+            for p, p_d, p_b in zip(group['params'], group_d['params'], group_b['params']):
+                if p.grad is None:
+                    continue
+
+                d_p = p.grad
+                d_p = p_d.grad + (d_p - p_b.grad)
+
+                flat_grad.append(d_p.flatten())
+
+                unit_noise = p.new_empty(p.size()).normal_()
+                p.add_(d_p + 2**0.5 * unit_noise / group['lr'] ** 0.5, alpha=-group['lr'])
         flat_grad = torch.cat(flat_grad, dim=0)
         return loss, flat_grad
 
