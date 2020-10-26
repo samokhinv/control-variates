@@ -57,7 +57,6 @@ class SG_MCMC_Inference:
         self.save_freq = kwargs.get('save_freq', 2)
         self.save_stoch_grad = kwargs.get('save_stoch_grad', True)
         self.epoch_length = kwargs.get('epoch_length', None)
-        print(self.epoch_length)
         if self.epoch_length is None:
             self.epoch_length = len(self.potential.batchsampler)
         
@@ -94,11 +93,13 @@ class SG_MCMC_Inference:
 
         bayesian_nn.train()
 
-        for it in range(1, n_burn + 1):
+        # burn-in
+        for it in range(1, n_burn + n_sample + 1):
+            # update fixed point, collect deterministic grads
             if isinstance(sg_mcmc, SVRG_LD) and (it-1) % self.epoch_length == 0:
                 bayesian_nn_fixed.load_state_dict(bayesian_nn.state_dict())
                 for p, p_f in zip(bayesian_nn.parameters(), bayesian_nn_fixed.parameters()):
-                    p_f.sigma2 = p.sigma2
+                   p_f.sigma2 = p.sigma2
                 potential = self.potential(bayesian_nn_fixed, stoch=False)
                 sg_mcmc_fixed.zero_grad()
                 potential.backward()
@@ -109,9 +110,9 @@ class SG_MCMC_Inference:
             if resample_prior:
                 bayesian_nn.resample_prior()
 
-            resample_momentum = (it % self.resample_momentum_every == 0) 
-            #    and (epoch < resample_prior_until) and (epoch < burn_in_epochs)
+            resample_momentum = (it % self.resample_momentum_every == 0)
 
+            # collect batch grads for fixed and current point
             seed = random.randint(0, self.potential.N_pts)
             if isinstance(sg_mcmc, SVRG_LD):
                 potential = self.potential(bayesian_nn_fixed, stoch=self.save_stoch_grad, seed=seed)
@@ -120,31 +121,54 @@ class SG_MCMC_Inference:
                 sg_mcmc.load_batch_grads(sg_mcmc_fixed.param_groups)
 
             potential = self.potential(bayesian_nn, stoch=self.save_stoch_grad, seed=seed)
-            sg_mcmc.zero_grad()
-            potential.backward()
+            if it > n_burn and it % save_freq == 0:
+                potential_grad = self.potential.grad(bayesian_nn, potential=potential)
+            else:
+                sg_mcmc.zero_grad()
+                potential.backward()
 
-            sg_mcmc.step(resample_momentum=resample_momentum, burn_in=True)
+            sg_mcmc.step(resample_momentum=resample_momentum, burn_in=it <= n_burn)
 
-            if it % self.report_every == 0:
+            if it % self.report_every == 0 or it == n_burn + n_sample:
                 logger.info(f'Iteration: {it}')
                 self._report(bayesian_nn)
-
-        prior_dict = bayesian_nn.prior_dict()
-
-        for it in range(n_burn + 1, n_burn + n_sample + 1):
-            resample_momentum = (it % self.resample_momentum_every == 0) 
-
-            potential = self.potential(bayesian_nn, stoch=self.save_stoch_grad)
-            sg_mcmc.zero_grad()
-            potential_grad = self.potential.grad(bayesian_nn, potential=potential)
-            sg_mcmc.step(resample_momentum=resample_momentum, burn_in=False)
-
-            if it % self.report_every == 0:
-                logger.info(f'Iteration: {it}')
-                self._report(bayesian_nn)
-            if it % save_freq == 0:
+            if it > n_burn and it % save_freq == 0:
                 traj.append(copy.deepcopy(bayesian_nn.state_dict()))
                 traj_grad.append(potential_grad.detach().numpy())
+ 
+        prior_dict = bayesian_nn.prior_dict()
+
+        # sampling
+        # if isinstance(sg_mcmc, SVRG_LD): #and (it-1) % self.epoch_length == 0:
+        #     bayesian_nn_fixed.load_state_dict(bayesian_nn.state_dict())
+        #     for p, p_f in zip(bayesian_nn.parameters(), bayesian_nn_fixed.parameters()):
+        #         p_f.sigma2 = p.sigma2
+        #     potential = self.potential(bayesian_nn_fixed, stoch=False)
+        #     sg_mcmc_fixed.zero_grad()
+        #     potential.backward()
+        #     sg_mcmc.load_dataset_grads(sg_mcmc_fixed.param_groups)
+
+        # for it in range(n_burn + 1, n_burn + n_sample + 1):
+        #     resample_momentum = (it % self.resample_momentum_every == 0)
+
+        #     seed = random.randint(0, self.potential.N_pts)
+        #     if isinstance(sg_mcmc, SVRG_LD):
+        #         potential = self.potential(bayesian_nn_fixed, stoch=self.save_stoch_grad, seed=seed)
+        #         sg_mcmc_fixed.zero_grad()
+        #         potential.backward()
+        #         sg_mcmc.load_batch_grads(sg_mcmc_fixed.param_groups) 
+
+        #     potential = self.potential(bayesian_nn, stoch=self.save_stoch_grad, seed=seed)
+        #     sg_mcmc.zero_grad()
+        #     potential_grad = self.potential.grad(bayesian_nn, potential=potential)
+        #     sg_mcmc.step(resample_momentum=resample_momentum, burn_in=False)
+
+        #     if it % self.report_every == 0 or it == n_burn + n_sample:
+        #         logger.info(f'Iteration: {it}')
+        #         self._report(bayesian_nn)
+        #     if it % save_freq == 0:
+        #         traj.append(copy.deepcopy(bayesian_nn.state_dict()))
+        #         traj_grad.append(potential_grad.detach().numpy())
 
         return traj, traj_grad, prior_dict
 
@@ -166,8 +190,20 @@ class SG_MCMC_Inference:
             trajs.append(traj)
             traj_grads.append(traj_grad)
             priors.append(prior_dict)
+            print(prior_dict)
             yield trajs, np.array(traj_grads), priors
 
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        # trash
         # total_steps = n_epoch * len(self.trainloader)
         # burn_in_steps = burn_in_epochs * len(self.trainloader)
         # if self.max_weight_set_size is not float('inf'):

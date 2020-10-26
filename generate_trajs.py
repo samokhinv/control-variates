@@ -10,8 +10,9 @@ from matplotlib import pyplot as plt
 import numpy as np
 from tqdm import tqdm
 import argparse
+import json
 
-from bayesian_inference.neural_networks import MLP, LogRegression, classif_err_fn, classif_loss_fn, GammaGaussPrior
+from bayesian_inference.neural_networks import define_nn, MLP, LogRegression, classif_err_fn, classif_loss_fn, GammaGaussPrior
 from bayesian_inference.potentials import ClassificationPotential
 from bayesian_inference.sg_mcmc_methods import  SGLD, SVRG_LD, ScaleAdaSGHMC as H_SA_SGHMC
 from bayesian_inference.trajectory_sampler import SG_MCMC_Inference, BurnInScheduler
@@ -29,46 +30,48 @@ def parse_arguments():
     parser.add_argument('--n_trajs', type=int, default=105)
     parser.add_argument('--n_burn', type=int, default=1e3)
     parser.add_argument('--n_sample', type=int, default=1e4)
-    parser.add_argument('--lr', type=float, default=1e-7)
-    parser.add_argument('--batch_size', type=int, default=128)
-    parser.add_argument('--n_hidden_layers', type=int, default=0)
-    parser.add_argument('--hidden_dim', type=int, default=0)
-    parser.add_argument('--classes', type=int, nargs='+', default=[3,5])
+    
     parser.add_argument('--alpha', type=float, default=1)
     parser.add_argument('--beta', type=float, default=1)
     parser.add_argument('--resample_prior_every', type=int, default=100)
-    parser.add_argument('--resample_momentum_every', type=int, default=100)
     parser.add_argument('--resample_prior_until', type=int, default=None)
-    parser.add_argument('--save_freq', type=int, default=1)
-    parser.add_argument('--report_every', type=int, default=1000)
-    parser.add_argument('--device', type=str, default='cuda:0')
+    
+    parser.add_argument('--lr', type=float, default=1e-7)
+    parser.add_argument('--batch_size', type=int, default=128)
+    parser.add_argument('--resample_momentum_every', type=int, default=100)
     parser.add_argument('--sg_mcmc_method', type=str, choices=[
       'sgld', 'svrg-ld', 'sghmc'
       ], default='sghmc')
-    parser.add_argument('--seed', type=int, default=None)
-    parser.add_argument('--save_path', type=str)
-    parser.add_argument('--data_dir', type=str)
-    parser.add_argument('--dataset', type=str, choices=['mnist', 'uci'], default='mnist')
-    parser.add_argument('--not_normalize', action='store_true')
     parser.add_argument('--save_determ_grad', action='store_true')
     parser.add_argument('--epoch_length', type=int, default=None)
-    #parser.add_argument('--burn_lr', type=float, default=None)
-    #parser.add_argument('--max_sample_size', type=int, default=float('inf'))
-    #parser.add_argument('--not_sample_prior', action='store_true')
+
+    parser.add_argument('--save_freq', type=int, default=1)
+    parser.add_argument('--report_every', type=int, default=1000)
+
+    parser.add_argument('--model_config_path', type=str, required=True)
+    parser.add_argument('--save_path', type=str, required=True)
+    parser.add_argument('--data_dir', type=str)
+    
+    parser.add_argument('--dataset', type=str, choices=['mnist', 'uci'], default='mnist')
+    parser.add_argument('--classes', type=int, nargs='+', default=[3,5])
+    parser.add_argument('--not_normalize', action='store_true')
+
+    parser.add_argument('--device', type=str, default='cuda:0')
+    parser.add_argument('--seed', type=int, default=None)
 
     args = parser.parse_args()
 
     return args
 
 
-def generate(args, batchsampler, valloader, device):
+def generate(args, batchsampler, valloader, config, device):
     potential = ClassificationPotential(batchsampler, device)
     prior = GammaGaussPrior(alpha=args.alpha, beta=args.beta)
+    
     x, _ = valloader.dataset[0]
-    input_dim = 1
-    for d in x.shape:
-        input_dim *= d
-    bayesian_nn = LogRegression((input_dim,), prior)
+    x_shape = x.shape
+    
+    bayesian_nn, config = define_nn(config, x_shape, prior)
     bayesian_nn.sample_prior()
     bayesian_nn.init_state_dict = bayesian_nn.state_dict()
     bayesian_nn.init_prior_dict = bayesian_nn.prior_dict()
@@ -120,15 +123,18 @@ if __name__ == '__main__':
         
     randsampler = torch.utils.data.RandomSampler(trainloader.dataset, replacement=False)
     batchsampler = torch.utils.data.DataLoader(trainloader.dataset, batch_size=args.batch_size, sampler=randsampler)
+    config = json.load(Path(args.model_config_path).open('r'))
 
-    #trajs, traj_grads, priors = [], [], []
-    for  trajs, traj_grads, priors in generate(args, batchsampler, valloader, device):
-        #trajs.append(traj)
-        #traj_grads.append(traj_grad)
-        #priors.append(prior)
-        pickle.dump((trajs, traj_grads, priors), Path(args.save_path).open('wb'))
+    Path(args.save_path).parent.mkdir(exist_ok=True, parents=True)
+    json.dump(config, Path(args.save_path + '_config.json').open('w'))
+    for  trajs, traj_grads, priors in generate(args, batchsampler, valloader, config, device):
+        pickle.dump((trajs, traj_grads, priors), Path(args.save_path + '_traj.pkl').open('wb'))
 
 
+
+
+
+    # trash
     #weights_grads_priors = []
 
     # def init_model(state_dict=None):

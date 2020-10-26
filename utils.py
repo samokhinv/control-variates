@@ -6,6 +6,8 @@ import copy
 import numpy as np
 import random
 
+from bayesian_inference.neural_networks import define_nn
+
 
 def standartize(X_train,X_test,intercept = True):
     """Whitens noise structure, covariates updated
@@ -58,12 +60,12 @@ class DatasetStandarsScaler():
         return new_dataset
 
 
-def load_trajs(trajs_path, bayesian_nn_class, canvas, requires_grad=False):
+def load_trajs(trajs_path, config, x_shape, requires_grad=False):
     trajs, traj_grads, priors = pickle.load(Path(trajs_path).open('rb'))
     
     for traj in trajs:
         for i, state_dict in enumerate(traj):
-            traj[i] = bayesian_nn_class(canvas)
+            traj[i], config = define_nn(config, x_shape)
             traj[i].load_state_dict(state_dict)
             for p in traj[i].parameters():
                 p.requires_grad = False

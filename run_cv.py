@@ -43,6 +43,7 @@ def get_cv(psy_input_dim, device, args, potential_grad=None,
 
 
 def test_cv(trajs, ncv, batches, function_f, args):
+    print(ncv.psy_model.state_dict())
     n_traj = len(trajs)
     traj_size = len(trajs[0][0])
     n_batches = len(batches)
@@ -151,35 +152,39 @@ def train_cv(trajs, ncv, batches, function_f, args):
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
+
     parser.add_argument('--cv_lr', default=1e-6, type=float)
     parser.add_argument('--n_cv_iter', default=100, type=int)
-    parser.add_argument('--batch_size', default=-1, type=int)
-    parser.add_argument('--width', type=int, default=100)
-    parser.add_argument('--depth', type=int, default=1)
-    parser.add_argument('--output_dim', type=int, default=2)
-    parser.add_argument('--trajs_path', type=str, required=True)
     parser.add_argument('--psy_type', type=str, choices=['const', 'mlp', 'linear'], default='const')
-    parser.add_argument('--device', type=str, default='cpu')
-    parser.add_argument('--classes', type=int, nargs='+', default=[3, 5])
-    parser.add_argument('--save_path', type=str, required=True)
-    parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--data_dir', type=str, default='..data/mnist')
-    parser.add_argument('--dataset', type=str, choices=['mnist', 'uci'], default='mnist')
+    parser.add_argument('--var_estimator', type=str, choices=['sample', 'spectral'], default='sample')
     parser.add_argument('--centr_reg_coef', type=float, default=0)
+
+    parser.add_argument('--n_train_traj', type=int)
+    parser.add_argument('--n_test_traj', type=int)
+    
+    parser.add_argument('--max_sample_size', type=int, default=100)
+    parser.add_argument('--keep_n_last', type=int)
+    parser.add_argument('--cut_n_first', type=int, default=0)
+    parser.add_argument('--n_points', type=int, default=100)
+    parser.add_argument('--sample_points', action='store_true')
+    parser.add_argument('--n_batches', type=int, default=1)
+    parser.add_argument('--predictive_distribution', action='store_true')
+
+    parser.add_argument('--data_dir', type=str, default='..data/mnist')
+    #parser.add_argument('--save_path', type=str, required=True)
     parser.add_argument('--figs_dir', type=str)
     parser.add_argument('--metrics_dir', type=str)
     parser.add_argument('--prefix_name', type=str)
-    parser.add_argument('--max_sample_size', type=int, default=100)
-    parser.add_argument('--n_points', type=int, default=10)
+    parser.add_argument('--model_config_path', type=str, required=True)
+    parser.add_argument('--trajs_path', type=str, required=True)
+
+    parser.add_argument('--dataset', type=str, choices=['mnist', 'uci'], default='mnist')
     parser.add_argument('--not_normalize', action='store_true')
-    parser.add_argument('--cut_n_first', type=int, default=0)
-    parser.add_argument('--sample_points', action='store_true')
-    parser.add_argument('--n_batches', type=int, default=1)
-    parser.add_argument('--var_estimator', type=str, choices=['sample', 'spectral'], default='sample')
-    parser.add_argument('--predictive_distribution', action='store_true')
-    parser.add_argument('--keep_n_last', type=int)
-    parser.add_argument('--n_train_traj', type=int)
-    parser.add_argument('--n_test_traj', type=int)
+    parser.add_argument('--classes', type=int, nargs='+', default=[3, 5])
+    parser.add_argument('--batch_size', default=-1, type=int)
+
+    parser.add_argument('--device', type=str, default='cuda:0')
+    parser.add_argument('--seed', type=int, default=42)
 
     args = parser.parse_args()
     return args
@@ -237,17 +242,15 @@ if __name__ == "__main__":
     N_train = len(train_dl.dataset)
     print(f'N_train: {N_train}')
 
-    x, _ = train_dl.dataset[0]
-    args.input_dim = 1
-    for d in x.shape:
-        args.input_dim *= d
-
     x, _ = next(iter(valid_dl))
+    x_shape = x[0].shape
+
+    config = json.load(Path(args.model_config_path).open('r'))
     
     trajs, traj_grads, _ = load_trajs(
         args.trajs_path,
-        bayesian_nn_class=LogRegression, 
-        canvas=(args.input_dim,))
+        config,
+        x_shape)
     
     print(f'N trajs: {len(trajs)}, len of traj: {len(trajs[0])}')
 

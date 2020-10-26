@@ -109,13 +109,12 @@ class SVRG_LD(SG_MCMC):
         loss = None
         flat_grad = []
         for group, group_d, group_b in zip(self.param_groups, self.dataset_grads, self.batch_grads):
-            for p, g_d, g_b in zip(group['params'], group_d['params'], group_b['params']):
+            for p, d_d, d_b in zip(group['params'], group_d['params'], group_b['params']):
                 if p.grad is None:
                     continue
 
                 d_p = p.grad
-                #print(p_d, p_d.grad, p_b, p_b.grad)
-                d_p = g_d + (d_p - g_b)
+                d_p = d_d + (d_p - d_b)
 
                 flat_grad.append(d_p.flatten())
 

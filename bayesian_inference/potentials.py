@@ -48,7 +48,7 @@ class ClassificationPotential(Potential):
 
     def grad(self, bayesian_nn, stoch=True, potential=None):
         if potential is None:
-            potential = self.__call__(bayesian_nn, stoch=True)
+            potential = self.__call__(bayesian_nn, stoch=stoch)
 
         bayesian_nn.zero_grad()
         potential.backward()

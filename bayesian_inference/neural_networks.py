@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -6,7 +7,7 @@ from numpy.random import gamma
 
 
 def get_prediction(model, x):
-    return F.softmax(model(x), dim=-1)
+    return F.softmax(model(x.float()), dim=-1)
 
 
 def get_binary_prediction(models, x, classes):
@@ -15,7 +16,7 @@ def get_binary_prediction(models, x, classes):
         models = (models,)
     pred = []
     for model in models: 
-        pred.append(F.softmax(model(x)[..., classes], dim=-1)[..., -1])
+        pred.append(F.softmax(model(x.float())[..., classes], dim=-1)[..., -1])
     pred = torch.stack(pred, 0)
     return pred
 
@@ -25,7 +26,23 @@ def classif_err_fn(out, y):
 
 
 def classif_loss_fn(out, y):
-    return F.cross_entropy(out, y, reduction='sum') 
+    return F.cross_entropy(out, y, reduction='sum')
+
+
+def define_nn(config, x_shape, prior=None):
+    for k, v in config.items():
+        if isinstance(v, str):
+            config[k] = eval(v)
+    if config['model'] is LogRegression:
+        input_dim = np.prod(x_shape)
+        config['input_dim'] = input_dim
+        canvas = input_dim, config['bias']
+    else:
+        raise NotImplementedError(config['model'])
+
+    bayesian_nn = config['model'](canvas, prior)
+
+    return bayesian_nn, config 
 
 
 class BayesianNN(nn.Module):
@@ -86,8 +103,8 @@ class MLP(BayesianNN):
 class LogRegression(BayesianNN):
     def __init__(self, canvas, prior=None):
         super().__init__(canvas, prior)
-        input_size = canvas[0]
-        self.linear = nn.Linear(input_size, 2)
+        input_size, bias = canvas
+        self.linear = nn.Linear(input_size, 2, bias=bias)
 
     def forward(self, x):
         return self.linear(x.flatten(1))  # logits to use in cross entropy
