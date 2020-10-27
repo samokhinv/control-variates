@@ -39,14 +39,19 @@ class SteinCV:
     def __call__(self, models, x_batch, priors=None, potential_grad=None):
         priors = self.priors if priors is None else priors
         if potential_grad is None:
-            potential_grad = self.potential_grad
+           potential_grad = self.potential_grad
         if isinstance(models, nn.Module):
             models = (models, )
-        for model in models:
-            model.zero_grad()
+        if isinstance(models[0], nn.Module):
+            for model in models:
+                model.zero_grad()
+            models_weights = torch.stack([state_dict_to_vec(model.state_dict()) for model in models])
+        else:
+            models_weights = models
+        
         if potential_grad is None:
-            potential_grad = compute_potential_grad(models, self.train_x, self.train_y, self.N_train, self.priors)
-        models_weights = torch.stack([state_dict_to_vec(model.state_dict()) for model in models])
+           potential_grad = compute_potential_grad(models, self.train_x, self.train_y, self.N_train, self.priors)
+        
         models_weights.requires_grad = True
         psy_value = self.psy_model(models_weights, x_batch)
         
@@ -56,10 +61,13 @@ class SteinCV:
             psy_func = partial(self.psy_model, x=x_batch)
             psy_jac = torch.autograd.functional.jacobian(psy_func, models_weights, create_graph=True)
             psy_div = torch.einsum('ijil->ij', psy_jac)
-        if psy_value.ndim == 2:
-            if potential_grad.ndim == 2:
-                psy_value = psy_value.unsqueeze(-1).repeat(1, 1, potential_grad.shape[-1])
+        # if psy_value.ndim == 2:
+        #     if potential_grad.ndim == 2:
+        #         psy_value = psy_value.unsqueeze(-1).repeat(1, 1, potential_grad.shape[-1])
         ncv_value = -1 * torch.einsum('ijk,ik->ij', psy_value, potential_grad) + psy_div
+        #print(psy_value.shape, potential_grad.shape)
+        #ncv_value = (-(psy_value.mean(1) * potential_grad).sum(-1) + psy_div).unsqueeze(1).repeat(1, len(x_batch))
+
         return ncv_value
 
     # def update_potential(self, train_x, train_y):
@@ -87,7 +95,7 @@ class BasePsy(nn.Module):
 class PsyConstVector(BasePsy):
     def __init__(self, input_dim):
         super().__init__()
-        self.param = nn.Parameter(torch.zeros(input_dim))
+        self.param = nn.Parameter(torch.ones(input_dim))
 
     def forward(self, weights, x):
         return self.param.repeat([weights.shape[0], x.shape[0], 1])

@@ -67,8 +67,8 @@ def compute_naive_variance(function: callable, control_variate: callable, models
 
 
 class SampleVarianceEstimator(object):
-    def __init__(self, function, sample, potential_grads=None, cv=None):
-        self.sample = sample
+    def __init__(self, function, traj, potential_grads=None, cv=None):
+        self.traj = traj
         self.function = function
         self.potential_grads = potential_grads
         self.cv = cv
@@ -76,18 +76,18 @@ class SampleVarianceEstimator(object):
     def estimate_variance(self, x, use_cv=True, all_values=None):
         if all_values is None:
             if use_cv is True:
-                all_values = self.function(self.sample, x) - self.cv(self.sample, x, potential_grad=self.potential_grads)
+                all_values = self.function(self.traj, x) - self.cv(self.traj, x, potential_grad=self.potential_grads)
             else:
-                all_values = self.function(self.sample, x)
+                all_values = self.function(self.traj, x)
 
-        var = ((all_values - all_values.mean(0)) ** 2).sum(0) / (len(self.sample) - 1)
+        var = ((all_values - all_values.mean(0)) ** 2).sum(0) / (len(self.traj) - 1)
 
         return var
 
 
 class SpectralVarianceEstimator(object):
-    def __init__(self, function, sample, potential_grads=None, cv=None):
-        self.sample = sample
+    def __init__(self, function, traj, potential_grads=None, cv=None):
+        self.traj = traj
         self.function = function
         self.potential_grads = potential_grads
         self.cv = cv
@@ -116,9 +116,9 @@ class SpectralVarianceEstimator(object):
     def estimate_variance(self, x, use_cv=True, all_values=None):
         if all_values is None:
             if use_cv is True:
-                all_values = self.function(self.sample, x) - self.cv(self.sample, x, potential_grad=self.potential_grads)
+                all_values = self.function(self.traj, x) - self.cv(self.traj, x, potential_grad=self.potential_grads)
             else:
-                all_values = self.function(self.sample, x)
+                all_values = self.function(self.traj, x)
 
         var = self.compute_spectral_variance(all_values)
         return var

@@ -18,6 +18,19 @@ class Potential(ABC):
         pass
 
 
+class GaussPotential(Potential):
+    def __init__(self, mu, sigma):
+        self.mu = mu
+        self.sigma = sigma
+        self.sigma_inv = torch.inverse(sigma)
+
+    def __call__(self, point):
+        return -0.5*(self.sigma_inv @ (point-self.mu)) @ (point-self.mu)
+        
+    def grad(self, point):
+        return -self.sigma_inv @ (point - self.mu)
+
+
 class ClassificationPotential(Potential):
     def __init__(self, batchsampler, device):
         self.batchsampler = batchsampler

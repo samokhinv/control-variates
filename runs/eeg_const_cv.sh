@@ -1,6 +1,6 @@
 #!/bin/bash
-python3 run_cv.py \
---cv_lr 1e-5 \
+python3 run_sgmcmc_vr.py \
+--cv_lr 1e-6 \
 --n_cv_iter 40 \
 --psy_type const \
 --var_estimator sample \

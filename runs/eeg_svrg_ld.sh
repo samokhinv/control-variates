@@ -1,5 +1,5 @@
 #!/bin/bash
-python3 generate_trajs.py \
+python3 generate_sgmcmc_trajs.py \
 --n_trajs 55 \
 --n_burn 10000 \
 --n_sample 1000 \
