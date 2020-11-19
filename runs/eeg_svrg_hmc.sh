@@ -1,0 +1,88 @@
+#!/bin/bash
+python3 generate_sgmcmc_trajs.py \
+--n_trajs 5 \
+--n_burn 5000 \
+--n_sample 10000 \
+--lr 0.1 \
+--burn_batch_size 15 \
+--sample_batch_size 15 \
+--alpha 1 \
+--beta 1 \
+--model_config_path model_configs/log_reg.json \
+--resample_prior_every 100000 \
+--resample_momentum_every 100 \
+--save_freq 1 \
+--sg_mcmc_method sghmc \
+--seed 44 \
+--data_dir ../mcmc_vr/sgmcmc/data/eeg \
+--dataset uci \
+--save_dir ../mcmc_vr/sgmcmc/eeg \
+--prefix_name sghmc_train_var100 \
+--epoch_length 1000 \
+--report_every 15000
+
+python3 generate_sgmcmc_trajs.py \
+--n_trajs 100 \
+--n_burn 5000 \
+--n_sample 10000 \
+--lr 0.1 \
+--burn_batch_size 15 \
+--sample_batch_size 15 \
+--alpha 1 \
+--beta 1 \
+--model_config_path model_configs/log_reg.json \
+--resample_prior_every 100000 \
+--resample_momentum_every 100 \
+--save_freq 1 \
+--sg_mcmc_method sghmc \
+--seed 43 \
+--data_dir ../mcmc_vr/sgmcmc/data/eeg \
+--dataset uci \
+--save_dir ../mcmc_vr/sgmcmc/eeg \
+--prefix_name sghmc_test_var100 \
+--epoch_length 1000 \
+--report_every 50000
+
+python3 generate_sgmcmc_trajs.py \
+--n_trajs 5 \
+--n_burn 5000 \
+--n_sample 10000 \
+--lr 0.1 \
+--burn_batch_size 15 \
+--sample_batch_size 15 \
+--alpha 1 \
+--beta 1 \
+--model_config_path model_configs/log_reg.json \
+--resample_prior_every 100000 \
+--resample_momentum_every 100 \
+--save_freq 1 \
+--sg_mcmc_method svrg-hmc \
+--seed 44 \
+--data_dir ../mcmc_vr/sgmcmc/data/eeg \
+--dataset uci \
+--save_dir ../mcmc_vr/sgmcmc/eeg \
+--prefix_name svrg_hmc_train_var100 \
+--epoch_length 1000 \
+--report_every 15000
+
+python3 generate_sgmcmc_trajs.py \
+--n_trajs 100 \
+--n_burn 5000 \
+--n_sample 10000 \
+--lr 0.1 \
+--burn_batch_size 15 \
+--sample_batch_size 15 \
+--alpha 1 \
+--beta 1 \
+--model_config_path model_configs/log_reg.json \
+--resample_prior_every 100000 \
+--resample_momentum_every 100 \
+--save_freq 1 \
+--sg_mcmc_method svrg-hmc \
+--seed 43 \
+--data_dir ../mcmc_vr/sgmcmc/data/eeg \
+--dataset uci \
+--save_dir ../mcmc_vr/sgmcmc/eeg \
+--prefix_name svrg_hmc_test_var100 \
+--epoch_length 1000 \
+--report_every 50000

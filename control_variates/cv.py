@@ -4,11 +4,11 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from .cv_utils import (
-    compute_log_likelihood, 
+    #compute_log_likelihood, 
     compute_tricky_divergence, 
     state_dict_to_vec, 
-    compute_concat_gradient, 
-    compute_potential_grad
+    #compute_concat_gradient, 
+    #compute_potential_grad
 )
 
 
@@ -26,61 +26,33 @@ def reshape_m_i(models_vec, image_vec):
 
 
 class SteinCV:
-    def __init__(self, psy_model, priors=None, potential_grad=None, 
-                train_x=None, train_y=None, N_train=None):
+    def __init__(self, psy_model, **kwargs):
         self.psy_model = psy_model
-        self.train_x = train_x
-        self.train_y = train_y
-        self.priors = priors
-        self.N_train = N_train
-        self.potential_grad = potential_grad
 
-
-    def __call__(self, models, x_batch, priors=None, potential_grad=None):
-        priors = self.priors if priors is None else priors
-        if potential_grad is None:
-           potential_grad = self.potential_grad
-        if isinstance(models, nn.Module):
-            models = (models, )
-        if isinstance(models[0], nn.Module):
-            for model in models:
-                model.zero_grad()
-            models_weights = torch.stack([state_dict_to_vec(model.state_dict()) for model in models])
-        else:
-            models_weights = models
-        
-        if potential_grad is None:
-           potential_grad = compute_potential_grad(models, self.train_x, self.train_y, self.N_train, self.priors)
-        
-        models_weights.requires_grad = True
+    def __call__(self, models_weights, x_batch, potential_grad):
         psy_value = self.psy_model(models_weights, x_batch)
-        
         if isinstance(self.psy_model, PsyConstVector):
             psy_div = 0.
         else:
-            psy_func = partial(self.psy_model, x=x_batch)
-            psy_jac = torch.autograd.functional.jacobian(psy_func, models_weights, create_graph=True)
-            psy_div = torch.einsum('ijil->ij', psy_jac)
-        # if psy_value.ndim == 2:
-        #     if potential_grad.ndim == 2:
-        #         psy_value = psy_value.unsqueeze(-1).repeat(1, 1, potential_grad.shape[-1])
-        ncv_value = -1 * torch.einsum('ijk,ik->ij', psy_value, potential_grad) + psy_div
-        #print(psy_value.shape, potential_grad.shape)
-        #ncv_value = (-(psy_value.mean(1) * potential_grad).sum(-1) + psy_div).unsqueeze(1).repeat(1, len(x_batch))
+            psy_div = self.psy_model.divergence(models_weights, x_batch)
+            #print(psy_div.shape)
+            # psy_func = partial(self.psy_model, x=x_batch)
+            # psy_jac = torch.autograd.functional.jacobian(psy_func, models_weights, create_graph=True)
+            # if models_weights.ndim == 2:
+            #     psy_div = torch.einsum('ijil->ij', psy_jac)
+            # elif models_weights.ndim == 3:
+            #     psy_div = torch.einsum('kijil->kij', psy_jac)
+            # else:
+            #     raise NotImplementedError
+
+        if potential_grad.ndim == 2:
+            ncv_value = -1 * torch.einsum('ijk,ik->ij', psy_value, potential_grad) + psy_div
+        elif potential_grad.ndim == 3:
+            ncv_value = -1 * torch.einsum('injk,ink->inj', psy_value, potential_grad) + psy_div
+        else:
+            raise NotImplementedError
 
         return ncv_value
-
-    # def update_potential(self, train_x, train_y):
-    #     log_likelihoods = [(compute_log_likelihood(self.train_x, self.train_y, model) * self.N_train).backward() for model in models]
-    #     #ll_grad = torch.stack([compute_tricky_divergence(model, self.priors) for model in models])  # ll_grad для каждой модели
-    #     ll_grad = self.train_x.shape[0] * torch.stack([compute_concat_gradient(model, self.priors) for model in models])
-    #     if self.ll_grad is None:
-    #         self.ll_grad = ll_grad / self.train_x.shape[0]
-    #     else:
-    #         self.ll_grad = (self.ll_grad * self.n_batch + ll_grad) / (self.n_batch + self.train_x.shape[0])
-
-    #     self.n_batch += self.train_x.shape[0]
-    #     self.priors = None 
         
 
 class BasePsy(nn.Module):
@@ -88,7 +60,7 @@ class BasePsy(nn.Module):
         super().__init__()
 
     def init_zero(self):
-        for n, p in self.named_parameters():
+        for p in self.parameters():
             nn.init.zeros_(p)
 
 
@@ -98,7 +70,7 @@ class PsyConstVector(BasePsy):
         self.param = nn.Parameter(torch.ones(input_dim))
 
     def forward(self, weights, x):
-        return self.param.repeat([weights.shape[0], x.shape[0], 1])
+        return self.param.repeat(list(weights.shape[:-1]) + [x.shape[0], 1])
 
 
 class PsyLinear(BasePsy):
@@ -107,7 +79,10 @@ class PsyLinear(BasePsy):
         self.layer = nn.Linear(input_dim, 1)#, bias=False)
 
     def forward(self, weights, x):
-        return reshape_m_i(self.layer(weights), x)[0].squeeze(-1)
+        return self.layer(weights).unsqueeze(-1).repeat([1]*(weights.ndim - 1) + [x.shape[0], weights.shape[-1]])
+
+    def divergence(self, weights, x):
+        return self.layer.weight.sum() * torch.ones(list(weights.shape[:-1]) + [x.shape[0]])
 
 
 class PsyMLP(BasePsy):

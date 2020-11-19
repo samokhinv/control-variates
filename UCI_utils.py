@@ -8,7 +8,7 @@ import dill as pickle
 from utils import DatasetStandarsScaler, standartize
 
 
-def load_uci_dataset(data_dir, batch_size, classes=None, normalize=True):
+def load_uci_dataset(data_dir, batch_size, classes=None, normalize=True, standard_scale=False):
     with Path(data_dir, 'tr_dataset.pkl').open('rb') as fp:
         trainset = pickle.load(fp)
     with Path(data_dir, 'test_dataset.pkl').open('rb') as fp:
@@ -35,15 +35,17 @@ def load_uci_dataset(data_dir, batch_size, classes=None, normalize=True):
     #         valset = Subset(valset, train_idx)
 
     if normalize is True:
-        X_train = np.vstack([x.numpy() for x, _ in trainset])
-        X_test = np.vstack([x.numpy() for x, _ in valset])
-        X_train, X_test = standartize(X_train, X_test, intercept=True)
-        # scaler = DatasetStandarsScaler()
-        # scaler.fit(trainset)
-        # trainset = scaler.transform(trainset)
-        # valset = scaler.transform(valset)
-        trainset = [(x, y) for x, (_, y) in zip(X_train, trainset)]
-        valset = [(x, y) for x, (_, y) in zip(X_train, valset)]
+        if standard_scale is True:
+            scaler = DatasetStandarsScaler()
+            scaler.fit(trainset)
+            trainset = scaler.transform(trainset)
+            valset = scaler.transform(valset)
+        else:
+            X_train = np.vstack([x.numpy() for x, _ in trainset])
+            X_test = np.vstack([x.numpy() for x, _ in valset])
+            X_train, X_test = standartize(X_train, X_test, intercept=True)
+            trainset = [(torch.from_numpy(x).float(), y) for x, (_, y) in zip(X_train, trainset)]
+            valset = [(torch.from_numpy(x).float(), y) for x, (_, y) in zip(X_train, valset)]
 
     if batch_size == -1:
         train_batch_size = len(trainset)

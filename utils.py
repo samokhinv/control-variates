@@ -5,8 +5,11 @@ import numpy as np
 import copy
 import numpy as np
 import random
+import gc
+from tqdm import tqdm
 
 from bayesian_inference.neural_networks import define_nn
+from control_variates.cv_utils import state_dict_to_vec
 
 
 def standartize(X_train,X_test,intercept = True):
@@ -60,19 +63,28 @@ class DatasetStandarsScaler():
         return new_dataset
 
 
-def load_trajs(trajs_path, config, x_shape, requires_grad=False):
+def load_trajs(trajs_path, config, x_shape, requires_grad=False, max_sample_size=None):
+    print('Start loading..')
+    gc.disable()
     trajs, traj_grads, priors = pickle.load(Path(trajs_path).open('rb'))
+    print('Unpickled')
+    traj_weights = []
     
-    for traj in trajs:
-        for i, state_dict in enumerate(traj):
+    max_sample_size = len(trajs[0]) if max_sample_size is None else max_sample_size
+    for traj in tqdm(trajs, leave=False):
+        traj_weights.append([])
+        
+        for i, state_dict in tqdm(enumerate(traj[:max_sample_size]), leave=False):
             traj[i], config = define_nn(config, x_shape)
             traj[i].load_state_dict(state_dict)
             for p in traj[i].parameters():
-                p.requires_grad = False
-    
-    traj_grads = torch.FloatTensor(np.stack(traj_grads))
+                p.requires_grad = requires_grad
+            traj_weights[-1].append(state_dict_to_vec(state_dict))
+        traj_weights[-1] = torch.stack(traj_weights[-1])
+    traj_weights = torch.stack(traj_weights)
+    print('Loaded')
 
-    return trajs, traj_grads, priors
+    return [x[:max_sample_size] for x in trajs], traj_weights, traj_grads[:, :max_sample_size, :], priors
 
 
 def random_seed(seed):

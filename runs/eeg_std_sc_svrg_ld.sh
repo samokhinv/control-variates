@@ -1,42 +1,44 @@
 #!/bin/bash
 python3 generate_sgmcmc_trajs.py \
 --n_trajs 5 \
---n_burn 5000 \
---n_sample 10000 \
---lr 0.1 \
+--n_burn 10000 \
+--n_sample 1000 \
+--lr 3e-4 \
 --burn_batch_size 15 \
 --sample_batch_size 15 \
 --alpha 1 \
 --beta 1 \
---model_config_path model_configs/log_reg.json \
+--model_config_path model_configs/log_reg_bias.json \
 --resample_prior_every 100000 \
 --save_freq 1 \
 --sg_mcmc_method svrg-ld \
---seed 44 \
+--seed 42 \
 --data_dir ../mcmc_vr/sgmcmc/data/eeg \
 --dataset uci \
 --save_dir ../mcmc_vr/sgmcmc/eeg \
---prefix_name svrg_ld_train_var100 \
+--prefix_name svrg_ld_std_sc_train \
 --epoch_length 1000 \
---report_every 15000
+--report_every 3000 \
+--standard_scale
 
 python3 generate_sgmcmc_trajs.py \
 --n_trajs 100 \
---n_burn 5000 \
---n_sample 10000 \
---lr 0.1 \
+--n_burn 10000 \
+--n_sample 1000 \
+--lr 3e-4 \
 --burn_batch_size 15 \
 --sample_batch_size 15 \
 --alpha 1 \
 --beta 1 \
---model_config_path model_configs/log_reg.json \
+--model_config_path model_configs/log_reg_bias.json \
 --resample_prior_every 100000 \
 --save_freq 1 \
 --sg_mcmc_method svrg-ld \
---seed 43 \
+--seed 42 \
 --data_dir ../mcmc_vr/sgmcmc/data/eeg \
 --dataset uci \
 --save_dir ../mcmc_vr/sgmcmc/eeg \
---prefix_name svrg_ld_test_var100 \
+--prefix_name svrg_ld_std_sc_test \
 --epoch_length 1000 \
---report_every 50000
+--report_every 3000 \
+--standard_scale

@@ -78,31 +78,51 @@ class SVRG_LD(SG_MCMC):
     def __init__(self,
                  params,
                  lr: float = 1e-3,
+                 sample_lr:float = None,
                  ):
 
         if lr < 0.0:
             raise ValueError("Invalid learning rate: {}".format(lr))
 
-        self.defaults = dict(lr=lr)
+        sample_lr = lr if sample_lr is None else sample_lr
+        self.defaults = dict(lr=lr, sample_lr=sample_lr)
 
         super().__init__(params, self.defaults)
 
-        self.dataset_grads = copy.deepcopy(self.param_groups)
-        self.batch_grads = copy.deepcopy(self.param_groups)
+        self.dataset_grads = [{'params': [0. for _ in g['params']]} for g in self.param_groups]
+        self.batch_grads = [{'params': [0. for _ in g['params']]} for g in self.param_groups]
 
+    @torch.no_grad() 
     def load_dataset_grads(self, dataset_param_groups):
       for group, group_d in zip(self.dataset_grads, dataset_param_groups):
             for i, p_d in enumerate(group_d['params']):
                 if p_d.grad is None:
                     continue
-                group['params'][i] = p_d.grad
+                group['params'][i] = p_d.grad.detach().clone()
 
+    @torch.no_grad()
     def load_batch_grads(self, batch_param_groups):
       for group, group_b in zip(self.batch_grads, batch_param_groups):
             for i, p_b in enumerate(group_b['params']):
                 if p_b.grad is None:
                     continue
-                group['params'][i] = p_b.grad
+                group['params'][i] = p_b.grad.detach().clone()
+
+    @torch.no_grad()
+    def get_grad(self):
+        flat_grad = []
+        for group, group_d, group_b in zip(self.param_groups, self.dataset_grads, self.batch_grads):
+            for p, d_d, d_b in zip(group['params'], group_d['params'], group_b['params']):
+                if p.grad is None:
+                    continue
+
+                d_p = p.grad
+                d = d_d + (d_p - d_b)
+
+                flat_grad.append(d.flatten())
+
+        flat_grad = torch.cat(flat_grad, dim=0)
+        return flat_grad
 
     @torch.no_grad()
     def step(self, burn_in=False, resample_momentum=False):  # the same call as for HMC
@@ -112,14 +132,16 @@ class SVRG_LD(SG_MCMC):
             for p, d_d, d_b in zip(group['params'], group_d['params'], group_b['params']):
                 if p.grad is None:
                     continue
-
                 d_p = p.grad
-                d_p = d_d + (d_p - d_b)
-
-                flat_grad.append(d_p.flatten())
+                d = d_d + (d_p - d_b)
+                flat_grad.append(d.flatten())
 
                 unit_noise = p.new_empty(p.size()).normal_()
-                p.add_(d_p + 2**0.5 * unit_noise / group['lr'] ** 0.5, alpha=-group['lr'])
+                if burn_in is True:
+                    lr = group['lr']
+                else:
+                    lr = group['sample_lr']
+                p.add_(d + 2**0.5 * unit_noise / lr ** 0.5, alpha=-lr)
         flat_grad = torch.cat(flat_grad, dim=0)
         return loss, flat_grad
 
@@ -144,9 +166,10 @@ class ScaleAdaSGHMC(SG_MCMC):
                  params,
                  lr: float = 1e-2,
                  base_c: float = 0.05,
-                 #gauss_sig: float = 0.1,
-                 #alpha0: float = 1,
-                 #beta0: float = 1,
+                 sample_lr:float = None,
+                #  gauss_sig: float = 0.1,
+                #  alpha0: float = 1,
+                #  beta0: float = 1,
                  ):
         """
         Set up the optimizer
@@ -231,6 +254,127 @@ class ScaleAdaSGHMC(SG_MCMC):
 
                 # update momentum (Eq 10 right in [1])
                 v_momentum.add_(- (lr ** 2) * v_inv_sqrt * d_p - base_c * v_momentum + noise_sample)
+
+                # update theta (Eq 10 left in [1])
+                p.add_(v_momentum)
+        flat_grad = torch.cat(flat_grad, dim=0)
+        return loss, flat_grad
+
+
+class SVRG_HMC(SG_MCMC):
+    def __init__(self,
+                 params,
+                 lr: float = 1e-1,
+                 base_c: float = 0.05,
+                 sample_lr:float = None,
+                 ):
+
+        if lr < 0.0:
+            raise ValueError("Invalid learning rate: {}".format(lr))
+        if base_c < 0:
+            raise ValueError("Invalid friction term: {}".format(base_c))
+
+        sample_lr = lr if sample_lr is None else sample_lr
+        self.eps = 1e-6
+        
+        self.defaults = dict(
+            lr=lr,
+            base_c=base_c,
+            sample_lr=sample_lr
+        )
+        super().__init__(params, self.defaults)
+
+        self.dataset_grads = [{'params': [0. for _ in g['params']]} for g in self.param_groups]
+        self.batch_grads = [{'params': [0. for _ in g['params']]} for g in self.param_groups]
+
+    @torch.no_grad() 
+    def load_dataset_grads(self, dataset_param_groups):
+      for group, group_d in zip(self.dataset_grads, dataset_param_groups):
+            for i, p_d in enumerate(group_d['params']):
+                if p_d.grad is None:
+                    continue
+                group['params'][i] = p_d.grad.detach().clone()
+
+    @torch.no_grad()
+    def load_batch_grads(self, batch_param_groups):
+      for group, group_b in zip(self.batch_grads, batch_param_groups):
+            for i, p_b in enumerate(group_b['params']):
+                if p_b.grad is None:
+                    continue
+                group['params'][i] = p_b.grad.detach().clone()
+
+    @torch.no_grad()
+    def get_grad(self):
+        flat_grad = []
+        for group, group_d, group_b in zip(self.param_groups, self.dataset_grads, self.batch_grads):
+            for p, d_d, d_b in zip(group['params'], group_d['params'], group_b['params']):
+                if p.grad is None:
+                    continue
+
+                d_p = p.grad
+                d = d_d + (d_p - d_b)
+
+                flat_grad.append(d.flatten())
+
+        flat_grad = torch.cat(flat_grad, dim=0)
+        return flat_grad
+
+    @torch.no_grad()
+    def step(self, burn_in=False, resample_momentum=False):
+        loss = None
+        flat_grad = []
+        for group, group_d, group_b in zip(self.param_groups, self.dataset_grads, self.batch_grads):
+            for p, d_d, d_b in zip(group['params'], group_d['params'], group_b['params']):
+                if p.grad is None:
+                    continue
+                state = self.state[p]  # define dict for each individual param
+                if len(state) == 0:
+                    state["iteration"] = 0
+                    state["tau"] = torch.ones_like(p)
+                    state["g"] = torch.ones_like(p)
+                    state["V_hat"] = torch.ones_like(p)
+                    state["v_momentum"] = torch.zeros_like(
+                        p)  # p.data.new(p.data.size()).normal_(mean=0, std=np.sqrt(group["lr"])) #
+                    #state['weight_decay'] = self.weight_decay
+
+                state["iteration"] += 1  # this is kind of useless now but lets keep it provisionally
+
+                #if resample_prior:
+                #    state['weight_decay'] = self.resample_prior(p)
+
+                base_c, lr = group["base_c"], group["lr"]
+                #weight_decay = state["weight_decay"]
+                tau, g, v_hat = state["tau"], state["g"], state["V_hat"]
+
+                d_p = p.grad
+                #if weight_decay != 0:
+                #    d_p.add_(p.data, alpha=weight_decay)
+                d = d_d + (d_p - d_b)
+                flat_grad.append(d.flatten())
+
+                # update parameters during burn-in
+                if burn_in:  # We update g first as it makes most sense
+                    tau.add_(-tau * (g ** 2) /
+                             (v_hat + self.eps) + 1)  # specifies the moving average window, see Eq 9 in [1] left
+                    tau_inv = 1. / (tau + self.eps)
+                    g.add_(-tau_inv * g + tau_inv * d)  # average gradient see Eq 9 in [1] right
+                    v_hat.add_(-tau_inv * v_hat + tau_inv * (d ** 2))  # gradient variance see Eq 8 in [1]
+
+                v_sqrt = torch.sqrt(v_hat)
+                v_inv_sqrt = 1. / (v_sqrt + self.eps)  # preconditioner
+
+                if resample_momentum:  # equivalent to var = M under momentum reparametrisation
+                    state["v_momentum"] = torch.normal(mean=torch.zeros_like(d),
+                                                       std=lr * v_inv_sqrt)
+                v_momentum = state["v_momentum"]
+
+                noise_var = (2. * (lr ** 3) * v_inv_sqrt * base_c * v_inv_sqrt - (lr ** 4))
+                noise_std = torch.sqrt(torch.clamp(noise_var, min=1e-16))
+                # sample random epsilon
+                noise_sample = torch.normal(mean=torch.zeros_like(d), std=noise_std)
+
+                # update momentum (Eq 10 right in [1])
+                v_momentum.add_(- (lr ** 2) * v_inv_sqrt * d - base_c * v_momentum + noise_sample)
 
                 # update theta (Eq 10 left in [1])
                 p.add_(v_momentum)

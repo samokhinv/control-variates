@@ -8,7 +8,7 @@ def RWM(potential:Potential, gamma, n_burn, n_sample):
     point = torch.randn_like(potential.mu)
     for _ in range(n_burn):
         grad = potential.grad(point)
-        new_point = point + (2*gamma)**0.5*torch.randn_like(point)
+        new_point = point + (2 * gamma)**0.5 * torch.randn_like(point)
         logratio = potential(new_point) - potential(point)
         if torch.rand(1).log().item() <= logratio.item():
             point = new_point

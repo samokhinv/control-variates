@@ -5,17 +5,22 @@ import torch
 from torch import cuda
 from torch.nn import functional as F
 import random
-from multiprocessing import Pool
+from torch import multiprocessing
+from torch.multiprocessing import Pool
 from typing import List, Callable
 from collections import defaultdict
 import tqdm
+from collections import OrderedDict
+import time
 
-from .sg_mcmc_methods import SVRG_LD
+from .sg_mcmc_methods import SVRG_LD, SVRG_HMC
 
 
 FORMAT = '%(asctime)-15s %(message)s'
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 logger = logging.getLogger(__name__)
+
+#pool = multiprocessing.Pool(multiprocessing.cpu_count() - 1)
 
 
 class BurnInScheduler(object):
@@ -58,7 +63,7 @@ class SG_MCMC_Inference:
         self.save_stoch_grad = kwargs.get('save_stoch_grad', True)
         self.epoch_length = kwargs.get('epoch_length', None)
         if self.epoch_length is None:
-            self.epoch_length = len(self.potential.batchsampler)
+            self.epoch_length = len(self.potential.burn_batchsampler)
         
     def _report(self, bayesian_nn):
         training =  bayesian_nn.training
@@ -76,103 +81,75 @@ class SG_MCMC_Inference:
                 n_pts += out.shape[0]
         potential = self.potential(bayesian_nn, stoch=False)
         potential_grad = self.potential.grad(bayesian_nn, potential=potential)
-        logger.info(f'potential: {potential.item()}, potential_grad: {potential_grad[:10].tolist()}')
+        logger.info(f'potential: {potential.item()}, potential_grad: {potential_grad[:10].tolist()}, {potential_grad.norm()}')
         logger.info(f'val loss: {val_loss / n_pts}, val error: {val_err / n_pts}')
 
         if training:
             bayesian_nn.train()
 
+    #@torch.no_grad()
+    @staticmethod
+    def copy_state_dict(state_dict):
+        new_dict = OrderedDict()
+        for n, p in state_dict.items():
+            new_dict[n] = p.detach().clone()
+        return new_dict
+
     def _sample_traj(self, bayesian_nn, sg_mcmc, n_burn, n_sample, resample_prior_until=None, save_freq=None):
         traj = []
         traj_grad = []
 
-        if isinstance(sg_mcmc, SVRG_LD):
+        if isinstance(sg_mcmc, (SVRG_LD, SVRG_HMC)):
             bayesian_nn_fixed = copy.deepcopy(bayesian_nn)
             sg_mcmc_fixed = type(sg_mcmc)(bayesian_nn_fixed.parameters(), lr=0.0)
             sg_mcmc_fixed.load_state_dict(sg_mcmc.state_dict())
 
         bayesian_nn.train()
-
-        # burn-in
         for it in range(1, n_burn + n_sample + 1):
             # update fixed point, collect deterministic grads
-            if isinstance(sg_mcmc, SVRG_LD) and (it-1) % self.epoch_length == 0:
+            if isinstance(sg_mcmc, (SVRG_LD, SVRG_HMC)) and (((it-1) % self.epoch_length == 0 and it > n_burn) or it == n_burn + 1):
                 bayesian_nn_fixed.load_state_dict(bayesian_nn.state_dict())
                 for p, p_f in zip(bayesian_nn.parameters(), bayesian_nn_fixed.parameters()):
                    p_f.sigma2 = p.sigma2
                 potential = self.potential(bayesian_nn_fixed, stoch=False)
-                sg_mcmc_fixed.zero_grad()
-                potential.backward()
+                _ = self.potential.grad(bayesian_nn_fixed, potential=potential)
                 sg_mcmc.load_dataset_grads(sg_mcmc_fixed.param_groups)
 
             resample_prior = (it % self.resample_prior_every == 0) and \
                 (it < resample_prior_until)
             if resample_prior:
                 bayesian_nn.resample_prior()
-
             resample_momentum = (it % self.resample_momentum_every == 0)
 
             # collect batch grads for fixed and current point
-            seed = random.randint(0, self.potential.N_pts)
-            if isinstance(sg_mcmc, SVRG_LD):
-                potential = self.potential(bayesian_nn_fixed, stoch=self.save_stoch_grad, seed=seed)
+            if isinstance(sg_mcmc, (SVRG_LD, SVRG_HMC)) and it > n_burn:
+                potential, x, y = self.potential(bayesian_nn_fixed, stoch=self.save_stoch_grad, burn=it <= n_burn)
                 sg_mcmc_fixed.zero_grad()
                 potential.backward()
                 sg_mcmc.load_batch_grads(sg_mcmc_fixed.param_groups)
-
-            potential = self.potential(bayesian_nn, stoch=self.save_stoch_grad, seed=seed)
-            if it > n_burn and it % save_freq == 0:
-                potential_grad = self.potential.grad(bayesian_nn, potential=potential)
             else:
-                sg_mcmc.zero_grad()
-                potential.backward()
+                x, y = None, None
 
-            sg_mcmc.step(resample_momentum=resample_momentum, burn_in=it <= n_burn)
+            potential, _, _ = self.potential(bayesian_nn, stoch=self.save_stoch_grad, burn=it <= n_burn, x=x, y=y)
+            sg_mcmc.zero_grad()
+            potential.backward()
+            _, potential_grad = sg_mcmc.step(resample_momentum=resample_momentum, burn_in=it <= n_burn)
 
             if it % self.report_every == 0 or it == n_burn + n_sample:
                 logger.info(f'Iteration: {it}')
                 self._report(bayesian_nn)
             if it > n_burn and it % save_freq == 0:
-                traj.append(copy.deepcopy(bayesian_nn.state_dict()))
-                traj_grad.append(potential_grad.detach().numpy())
+                traj.append(SG_MCMC_Inference.copy_state_dict(bayesian_nn.state_dict()))
+                #traj.append(copy.deepcopy(bayesian_nn.state_dict()))
+                traj_grad.append(potential_grad.detach())
  
         prior_dict = bayesian_nn.prior_dict()
-
-        # sampling
-        # if isinstance(sg_mcmc, SVRG_LD): #and (it-1) % self.epoch_length == 0:
-        #     bayesian_nn_fixed.load_state_dict(bayesian_nn.state_dict())
-        #     for p, p_f in zip(bayesian_nn.parameters(), bayesian_nn_fixed.parameters()):
-        #         p_f.sigma2 = p.sigma2
-        #     potential = self.potential(bayesian_nn_fixed, stoch=False)
-        #     sg_mcmc_fixed.zero_grad()
-        #     potential.backward()
-        #     sg_mcmc.load_dataset_grads(sg_mcmc_fixed.param_groups)
-
-        # for it in range(n_burn + 1, n_burn + n_sample + 1):
-        #     resample_momentum = (it % self.resample_momentum_every == 0)
-
-        #     seed = random.randint(0, self.potential.N_pts)
-        #     if isinstance(sg_mcmc, SVRG_LD):
-        #         potential = self.potential(bayesian_nn_fixed, stoch=self.save_stoch_grad, seed=seed)
-        #         sg_mcmc_fixed.zero_grad()
-        #         potential.backward()
-        #         sg_mcmc.load_batch_grads(sg_mcmc_fixed.param_groups) 
-
-        #     potential = self.potential(bayesian_nn, stoch=self.save_stoch_grad, seed=seed)
-        #     sg_mcmc.zero_grad()
-        #     potential_grad = self.potential.grad(bayesian_nn, potential=potential)
-        #     sg_mcmc.step(resample_momentum=resample_momentum, burn_in=False)
-
-        #     if it % self.report_every == 0 or it == n_burn + n_sample:
-        #         logger.info(f'Iteration: {it}')
-        #         self._report(bayesian_nn)
-        #     if it % save_freq == 0:
-        #         traj.append(copy.deepcopy(bayesian_nn.state_dict()))
-        #         traj_grad.append(potential_grad.detach().numpy())
 
         return traj, traj_grad, prior_dict
 
     def sample_trajs(self, n_trajs, n_burn, n_sample, resample_prior_until=None, save_freq=None):
+        #global func     # HACK
+        
         if save_freq is None:
             save_freq = self.save_freq
         if resample_prior_until is None:
@@ -181,179 +158,36 @@ class SG_MCMC_Inference:
         traj_grads = []
         trajs = []
         priors = []
-        for _ in tqdm.trange(n_trajs):
+        def func(seed=None):
+            #bayesian_nn, sg_mcmc, seed = args
+            if seed is not None:
+                torch.manual_seed(seed)
             bayesian_nn = self.bayesian_nn
             sg_mcmc = self.sg_mcmc
-            bayesian_nn.init()
+            #bayesian_nn.init()
+            bayesian_nn.init_norm()
             sg_mcmc.init(bayesian_nn.parameters())
+            start = time.time()
             traj, traj_grad, prior_dict = self._sample_traj(bayesian_nn, sg_mcmc, n_burn, n_sample, resample_prior_until, save_freq)
+            end = time.time()
+            logger.info(prior_dict)
+            logger.info(f'time: {end - start}')
+            return (traj, torch.stack(traj_grad, dim=0), prior_dict)
+
+        for _ in range(n_trajs):
+            traj, traj_grad, prior_dict = func()
             trajs.append(traj)
             traj_grads.append(traj_grad)
             priors.append(prior_dict)
-            print(prior_dict)
-            yield trajs, np.array(traj_grads), priors
+            yield trajs, torch.stack(traj_grads, dim=0), priors
 
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        # trash
-        # total_steps = n_epoch * len(self.trainloader)
-        # burn_in_steps = burn_in_epochs * len(self.trainloader)
-        # if self.max_weight_set_size is not float('inf'):
-        # start_save_step = total_steps - self.max_weight_set_size * self.save_freq
-        # else:
-        # start_save_step = burn_in_steps
-        # best_loss = 1e9
-        # no_significant_improvement_step = 0
 
-        # self.bayesian_nn.init()
-        # self.optimizer.init(self.model)
-    #     for epoch in range(n_epoch):
-    #         train_loss, val_loss = 0, 0
-    #         train_err, val_err = 0, 0
-    #         n_ex = 0
-    #         self.model.train()
-    #         for x, y in self.trainloader:
-    #             resample_prior = ((it_cnt + 1) % self.resample_prior_every == 0) and \
-    #             (epoch < resample_prior_until) and (epoch < burn_in_epochs)
-    #             resample_momentum = ((it_cnt + 1) % self.resample_momentum_every == 0) and \
-    #             (epoch < resample_prior_until) and (epoch < burn_in_epochs)
-    #             loss, err = self.do_train_step(x.to(self.device), y.to(self.device), 
-    #                 resample_prior=resample_prior, resample_momentum=resample_momentum)
-    #             self.scheduler.step(epoch)
-    #             train_loss += loss
-    #             train_err += err
-    #             n_ex += x.shape[0]
-    #             it_cnt += 1
+        # ncpu = multiprocessing.cpu_count()
+        # with Pool(1) as p:
+        #     results = p.map(func, [(self.bayesian_nn, self.sg_mcmc, 1)]) #list(np.arange(n_trajs)))
 
-    #             if epoch >= burn_in_epochs and it_cnt % self.save_freq == 0 and it_cnt >= start_save_step:
-    #                 self.save_sampled_net()
+        # trajs = [x[0] for x in results]
+        # traj_grads = torch.stack([x[1] for x in results], dim=0)
+        # priors = [x[2] for x in results]
 
-    #         if epoch % self.report_every == 0:
-    #             n_ex = 0
-    #             self.model.eval()
-    #             for x, y in self.valloader:
-    #                 with torch.no_grad():
-    #                     x, y = x.to(self.device), y.to(self.device)
-    #                     y_hat = self.model(x)
-    #                     val_err += self.err_func(y_hat, y).sum().item()
-    #                     val_loss += self.nll_func(y_hat, y)
-    #                     n_ex += x.shape[0]
-    #             if it_cnt <= start_save_step + 1:
-    #                 potential = self.compute_potential(stoch=self.save_potential_grad_type == 'stoch')
-    #                 self.optimizer.zero_grad()
-    #                 potential.backward()
-    #                 grad = self.get_potential_grad(add_prior_grad=False)[:10]
-    #             else:
-    #                 potential = self.potential_sample[-1]
-    #                 grad = self.potential_grad_sample[-1][:10]
-
-    #             logger.info(f'Epoch {epoch} finished. Val loss {val_loss / n_ex}, Val error {val_err / n_ex}')
-    #             logger.info(f'Potential: {potential}')
-    #             logger.info(f'Potential grad: {grad}')
-    #         # if self.early_stopping:
-    #         #     if val_loss / n_ex - best_loss < -self.min_delta:
-    #         #         best_loss = val_loss / n_ex
-    #         #     else:
-    #         #         no_significant_improvement_step += 1
-
-    #         #     if no_significant_improvement_step >= self.wait:
-    #         #         logger.info('Early Stopping triggered')
-    #         #         break
-
-    # def do_train_step(self, x, y, **kwargs):
-    #     y_hat = self.model(x)
-    #     nll = self.nll_func(y_hat, y)
-    #     nll *= self.N_train / x.shape[0]
-    #     self.optimizer.zero_grad() 
-    #     nll.backward()
-    #     if isinstance(self.optimizer, BaseOptimizer):
-    #         out = self.optimizer.step(**kwargs)
-    #         #grad = out[1].detach().numpy()
-    #     else:
-    #         self.optimizer.step()
-    #         #grad = self.get_potential_grad().detach().numpy()
-        
-    #     err = self.err_func(y_hat, y).sum().item()
-
-    #     self.loss_history.append(nll)
-    #     self.err_history.append(err)
-        
-    #     return nll, err
-
-    # def get_weight_sample(self, Nsample=0):
-    #     """return weight sample from posterior in a single-column array"""
-    #     #weight_vec = []
-
-    #     if Nsample == 0 or Nsample > len(self.weight_set_sample):
-    #         Nsample = len(self.weight_set_sample)
-
-    #     return self.weight_set_sample
-
-    # def save_sampled_net(self):
-    #     if len(self.weight_set_sample) >= self.max_weight_set_size:
-    #         self.weight_set_sample.pop(0)
-    #         self.potential_sample.pop(0)
-    #         self.potential_grad_sample.pop(0)
-    #     self.weight_set_sample.append(copy.deepcopy(self.model.state_dict()))
-    #     potential = self.compute_potential(stoch=self.save_potential_grad_type == 'stoch')
-    #     self.optimizer.zero_grad()
-    #     potential.backward()
-    #     grad = self.get_potential_grad(add_prior_grad=False)
-    #     self.potential_sample.append(potential)
-    #     self.potential_grad_sample.append(grad.detach().numpy())
-
-    # def compute_potential(self, stoch=False):
-    #     potential = 0
-    #     self.model.to(self.device)
-        
-    #     if stoch is False:
-    #         for x, y in self.trainloader:
-    #             x, y = x.to(self.device), y.to(self.device)
-    #             y_hat = self.model(x)
-    #             potential += self.nll_func(y_hat, y)
-    #     else:
-    #         x, y = next(iter(self.datasampler))
-    #         x, y = x.to(self.device), y.to(self.device)
-    #         y_hat = self.model(x)
-    #         potential = self.N_train / x.shape[0] * self.nll_func(y_hat, y)
-
-        
-    #     for group in self.optimizer.param_groups:
-    #         for p in group['params']:
-    #             if p.grad is None:
-    #                 continue
-    #             try:
-    #                 state = self.optimizer.state[p]
-    #                 weight_decay = state['weight_decay']
-    #             except:
-    #                 weight_decay = group['weight_decay']
-    #             potential += weight_decay / 2 * (p**2).sum()
-    #     return potential
- 
-    # def get_potential_grad(self, add_prior_grad=False):
-    #     flat_grad = []
-    #     for group in self.optimizer.param_groups:
-    #         for p in group['params']:
-    #             if p.grad is None:
-    #                 continue
-    #             try:
-    #                 state = self.optimizer.state[p]
-    #                 weight_decay = state['weight_decay']
-    #             except:
-    #                 weight_decay = group['weight_decay']
-
-    #             d_p = p.grad
-
-    #             if weight_decay != 0 and add_prior_grad is True:
-    #                 d_p.add_(p, alpha=weight_decay)
-
-    #             flat_grad.append(d_p.flatten())
-    #     return torch.cat(flat_grad, dim=0)
+        # return trajs, traj_grads, priors

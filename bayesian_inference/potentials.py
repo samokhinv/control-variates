@@ -32,36 +32,55 @@ class GaussPotential(Potential):
 
 
 class ClassificationPotential(Potential):
-    def __init__(self, batchsampler, device):
-        self.batchsampler = batchsampler
+    def __init__(self, burn_batchsampler, sample_batchsampler, device):
+        self.burn_batchsampler = burn_batchsampler
+        self.sample_batchsampler = sample_batchsampler
         self.device = device
-        self.N_pts = len(batchsampler.dataset)
+        self.N_pts = len(burn_batchsampler.dataset)
+        self.burn_batchiter = iter(burn_batchsampler)
+        self.sample_batchiter = iter(sample_batchsampler)
 
-    def __call__(self, bayesian_nn, stoch=True, seed=None):
+    def reload_iterator(self, burn=False):
+        if burn:
+            self.burn_batchiter = iter(self.burn_batchsampler)
+            return self.burn_batchiter
+        else:
+            self.sample_batchiter = iter(self.sample_batchsampler)
+            return self.sample_batchiter
+
+    def __call__(self, bayesian_nn, stoch=True, seed=None, burn=False, x=None, y=None):
         if seed is not None:
             torch.manual_seed(seed)
 
         if stoch is True:
-            x, y = next(iter(self.batchsampler))
-            x, y = x.to(self.device), y.to(self.device)
-            out = bayesian_nn(x.float())
+            if x is None or y is None:
+                batchiter = self.burn_batchiter if burn else self.sample_batchiter
+                try:
+                    x, y = next(batchiter)
+                except StopIteration:
+                    batchiter = self.reload_iterator(burn)
+                    x, y = next(batchiter)
+                #x, y = x.to(self.device), y.to(self.device)
+            #print(x * x)
+            out = bayesian_nn(x)
             log_prob = -F.cross_entropy(out, y, reduction='mean')
 
             potential = -self.N_pts * log_prob - bayesian_nn.get_log_prior()
+            return potential, x, y
         else:
+            batchsampler = self.burn_batchsampler if burn else self.sample_batchsampler
             potential = 0
-            for x, y in self.batchsampler:
+            for x, y in batchsampler:
                 x, y = x.to(self.device), y.to(self.device)
-                out = bayesian_nn(x.float())
+                out = bayesian_nn(x)
                 log_prob = -F.cross_entropy(out, y, reduction='sum')
                 potential -= log_prob
             potential -= bayesian_nn.get_log_prior()
+            return potential
 
-        return potential
-
-    def grad(self, bayesian_nn, stoch=True, potential=None):
+    def grad(self, bayesian_nn, stoch=True, potential=None, burn=False):
         if potential is None:
-            potential = self.__call__(bayesian_nn, stoch=stoch)
+            potential = self.__call__(bayesian_nn, stoch=stoch, burn=burn)
 
         bayesian_nn.zero_grad()
         potential.backward()

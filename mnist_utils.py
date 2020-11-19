@@ -1,12 +1,13 @@
+import numpy as np
 import torch
 import torch.utils.data
 from torchvision import transforms, datasets
 from pathlib import Path
 from torch.utils.data import Subset
-from utils import DatasetStandarsScaler
+from utils import DatasetStandarsScaler, standartize
 
 
-def load_mnist_dataset(data_dir, batch_size, classes=None, normalize=True):
+def load_mnist_dataset(data_dir, batch_size, classes=None, normalize=True, standard_scale=False):
     transform_train = transforms.Compose([
         transforms.ToTensor(),
         #transforms.Normalize(mean=(0.1307,), std=(0.3081,))
@@ -42,11 +43,17 @@ def load_mnist_dataset(data_dir, batch_size, classes=None, normalize=True):
             valset = Subset(valset, train_idx)
 
     if normalize is True:
-        print('Normalizing...')
-        scaler = DatasetStandarsScaler()
-        scaler.fit(trainset)
-        trainset = scaler.transform(trainset)
-        valset = scaler.transform(valset)
+        if standard_scale is True:
+            scaler = DatasetStandarsScaler()
+            scaler.fit(trainset)
+            trainset = scaler.transform(trainset)
+            valset = scaler.transform(valset)
+        else:
+            X_train = np.vstack([x.view(-1).numpy() for x, _ in trainset])
+            X_test = np.vstack([x.view(-1).numpy() for x, _ in valset])
+            X_train, X_test = standartize(X_train, X_test, intercept=True)
+            trainset = [(torch.from_numpy(x).float(), y) for x, (_, y) in zip(X_train, trainset)]
+            valset = [(torch.from_numpy(x).float(), y) for x, (_, y) in zip(X_test, valset)]
 
     if batch_size == -1:
         train_batch_size = len(trainset)
@@ -63,4 +70,3 @@ def load_mnist_dataset(data_dir, batch_size, classes=None, normalize=True):
         valloader = torch.utils.data.DataLoader(valset, batch_size=val_batch_size, shuffle=False, pin_memory=False)
 
     return trainloader, valloader
-

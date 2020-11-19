@@ -16,8 +16,9 @@ def get_binary_prediction(models, x, classes):
         models = (models,)
     pred = []
     for model in models: 
-        pred.append(F.softmax(model(x.float())[..., classes], dim=-1)[..., -1])
+        pred.append(model(x.float()))
     pred = torch.stack(pred, 0)
+    pred = F.softmax(pred[..., classes], dim=-1)[..., -1]
     return pred
 
 
@@ -81,6 +82,10 @@ class BayesianNN(nn.Module):
         self.load_state_dict(self.init_state_dict)
         self.load_prior_dict(self.init_prior_dict)
 
+    def init_norm(self):
+        for p in self.parameters():
+            nn.init.normal_(p, mean=0, std=1.)
+
 
 class MLP(BayesianNN):
     def __init__(self, canvas, prior=None):
@@ -107,7 +112,8 @@ class LogRegression(BayesianNN):
         self.linear = nn.Linear(input_size, 2, bias=bias)
 
     def forward(self, x):
-        return self.linear(x.flatten(1))  # logits to use in cross entropy
+        x = self.linear(x.flatten(1))
+        return x
 
 
 class SiBNN(BayesianNN):
@@ -173,6 +179,6 @@ class GammaGaussPrior(Prior):
     def get_log_prior(self, bayesian_nn):
         log_prior = 0
         for p in bayesian_nn.parameters():
-            log_prior += - p.norm(2) ** 2 / p.sigma2
+            log_prior += - p.norm(2) ** 2 / (2 * p.sigma2)
 
         return log_prior
